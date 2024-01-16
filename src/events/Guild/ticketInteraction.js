@@ -91,12 +91,7 @@ module.exports = {
           new ButtonBuilder()
             .setCustomId("closeTicket")
             .setLabel(`🔒 Cerrar ticket`)
-            .setStyle(ButtonStyle.Danger),
-
-          new ButtonBuilder()
-            .setCustomId("ticketTranscript")
-            .setLabel(`📋 Transcribir`)
-            .setStyle(ButtonStyle.Primary)
+            .setStyle(ButtonStyle.Danger)
         );
         await channel.send({ embeds: [embed], components: [button] });
         await interaction.reply({
@@ -125,35 +120,46 @@ module.exports = {
       name = name.replace("ticket-", "");
       const member = await interaction.guild.members.cache.get(name);
 
-      const reason = interaction.fields.getTextInputValue("closeReasonTicket");
-      await interaction.reply({
-        content: `🔒 Este ticket se cerrará en 30 segundos...`,
-      });
-      setTimeout(async () => {
-        await channel.delete().catch((err) => {});
-        await member
-          .send(
-            `📢 Te informamos de que tu ticket de ${interaction.guild.name} se ha cerrado con motivo de: \`${reason}\``
-          )
-          .catch((err) => {});
-      }, 30000);
-    } else if (interaction.customId == "ticketTranscript") {
+      // CREAMOS EL TRANSCRIPT
       const file = await createTranscript(interaction.channel, {
         limit: -1,
         returnBuffer: false,
         filename: `${interaction.channel.name}.html`,
       });
 
+      // LO ALMACENAMOS EN CHAT
       var msg = await interaction.channel.send({
         content: "Transcripcion del ticket: ",
         files: [file],
       });
-      var message = `Aquí está la transcripcción del ticket (https://mahto.id/chat-exporter?url=${
-        msg.attachments.first()?.url
-      }) de ${interaction.guild.name}`;
 
+      // Y LO PASAMOS A UNA VARIABLE
+      var message = `Ticket de **${member}** \nhttps://mahto.id/chat-exporter?url=${
+        msg.attachments.first()?.url
+      }`;
+
+      //BORRAMOS EL MENSAJE Y LO MANDAMOS AL CANAL
       await msg.delete().catch((err) => {});
-      await interaction.reply({ content: message, ephemeral: true });
+      const idCanal = "1139239474493145120";
+      const canal = client.channels.cache.get(idCanal);
+      canal.send(message);
+
+      const reason = interaction.fields.getTextInputValue("closeReasonTicket");
+      await interaction.reply({
+        content: `🔒 Este ticket se cerrará en 5 segundos...`,
+      });
+
+      setTimeout(async () => {
+        //BORRAMOS EL CANAL
+        await channel.delete().catch((err) => {});
+
+        //MANDAMOS DM AL USUARIO
+        await member
+          .send(
+            `📢 Te informamos de que tu ticket de **${interaction.guild.name}** se ha cerrado con motivo de: \`${reason}\``
+          )
+          .catch((err) => {});
+      }, 5000);
     }
   },
 };

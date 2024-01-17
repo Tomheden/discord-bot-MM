@@ -34,7 +34,7 @@ module.exports = class extends Client {
           {
             name: "something goes here",
             type: 4,
-            state: "Soy Taeko pero en bot",
+            state: "server.mundo-minecraft.com",
           },
         ],
       },

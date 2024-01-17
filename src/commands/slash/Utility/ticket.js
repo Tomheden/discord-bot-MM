@@ -67,7 +67,7 @@ module.exports = {
         const nombre = options.getString("nombre");
         var mensaje =
           options.getString("mensaje") ||
-          "Contacta con el staff para resolver tus dudas";
+          "¿Necesitas ayuda con algo? ¡Pulsa el botón para ponerte en contacto con un moderador!";
         const select = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId("ticketCreateSelect")
@@ -77,7 +77,7 @@ module.exports = {
         const embed = new EmbedBuilder()
           .setColor("Blurple")
           .setTitle(`✨ Crea un ticket`)
-          .setDescription(`👮` + mensaje)
+          .setDescription(`❓ ` + mensaje)
           .setFooter({
             text: `${interaction.guild.name}`,
             iconURL: `${interaction.guild.iconURL()}`,

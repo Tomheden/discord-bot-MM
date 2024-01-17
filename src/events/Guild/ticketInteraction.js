@@ -78,6 +78,22 @@ module.exports = {
                 PermissionsBitField.Flags.ReadMessageHistory,
               ],
             },
+            {
+              id: "624320666644250644",
+              allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.SendMessages,
+                PermissionsBitField.Flags.ReadMessageHistory,
+              ],
+            },
+            {
+              id: "624320529699962890",
+              allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.SendMessages,
+                PermissionsBitField.Flags.ReadMessageHistory,
+              ],
+            },
           ],
         });
         const embed = new EmbedBuilder()
@@ -128,25 +144,31 @@ module.exports = {
       });
 
       // LO ALMACENAMOS EN CHAT
-      var msg = await interaction.channel.send({
+      const idCanalTickets = "1113929288413085790";
+      const idCanalTranscripts = "1196950588710207488";
+      const canalTickets = client.channels.cache.get(idCanalTickets);
+      const canalTranscipts = client.channels.cache.get(idCanalTranscripts);
+      var msg = await canalTranscipts.send({
         content: "Transcripcion del ticket: ",
         files: [file],
       });
 
       // Y LO PASAMOS A UNA VARIABLE
-      var message = `Ticket de **${member}** \nhttps://mahto.id/chat-exporter?url=${
-        msg.attachments.first()?.url
-      }`;
-
-      //BORRAMOS EL MENSAJE Y LO MANDAMOS AL CANAL
-      await msg.delete().catch((err) => {});
-      const idCanal = "1139239474493145120";
-      const canal = client.channels.cache.get(idCanal);
-      canal.send(message);
+      const embed = new EmbedBuilder()
+        .setColor("Blurple")
+        .setTitle(`🎫 Ticket creado por ${member.user}`)
+        .setDescription(
+          `**URL: ** https://mahto.id/chat-exporter?url=${
+            msg.attachments.first()?.url
+          }`
+        )
+        .setThumbnail(member.displayAvatarURL({ dynamic: true }))
+        .setTimestamp();
+      canalTickets.send({ embeds: [embed] });
 
       const reason = interaction.fields.getTextInputValue("closeReasonTicket");
       await interaction.reply({
-        content: `🔒 Este ticket se cerrará en 5 segundos...`,
+        content: `🔒 Este ticket se cerrará en unos segundos...`,
       });
 
       setTimeout(async () => {

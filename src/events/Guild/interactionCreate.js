@@ -1,19 +1,6 @@
 const config = require("../../config");
 const { log } = require("../../functions");
 const ExtendedClient = require("../../class/ExtendedClient");
-//CHAPUZA
-const {
-  ModalBuilder,
-  TextInputBuilder,
-  ActionRowBuilder,
-  TextInputStyle,
-  ChannelType,
-  EmbedBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  PermissionsBitField,
-} = require("discord.js");
-const ticket = require("../../schemas/TicketSchema");
 
 const cooldown = new Map();
 

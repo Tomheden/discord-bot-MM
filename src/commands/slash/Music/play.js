@@ -25,7 +25,7 @@ module.exports = {
         ephemeral: true,
       });
     }
-    await client.distube.play(
+    client.distube.play(
       interaction.member.voice.channel,
       interaction.options.getString("cancion"),
       {

@@ -13,7 +13,7 @@ module.exports = {
    * @param {ChatInputCommandInteraction} interaction
    */
   run: async (client, interaction) => {
-    const queue = client.distube.getQueue(message);
+    const queue = client.distube.getQueue(interaction);
     if (!queue)
       return interction.channel.send(`❌ | No hay nada sonando ahora mismo`);
     try {

@@ -1,17 +1,14 @@
 const {
-  ChatInputCommandInteraction,
   SlashCommandBuilder,
   EmbedBuilder,
   PermissionsBitField,
   ActionRowBuilder,
-  StringSelectMenuBuilder,
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
 } = require("discord.js");
 const ExtendedClient = require("../../../class/ExtendedClient");
 const ticket = require("../../../schemas/TicketSchema");
-const { options } = require("./ping");
 
 module.exports = {
   structure: new SlashCommandBuilder()

@@ -1,5 +1,5 @@
-const { ModalSubmitInteraction } = require("discord.js");
-const { EmbedBuilder } = require("discord.js");
+const { ModalSubmitInteraction, ActionRowBuilder } = require("discord.js");
+const { EmbedBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const ExtendedClient = require("../../class/ExtendedClient");
 const { createTranscript } = require("discord-html-transcripts");
 
@@ -36,15 +36,21 @@ module.exports = {
     // Y LO PASAMOS A UNA VARIABLE
     const embed = new EmbedBuilder()
       .setColor("Blurple")
-      .setTitle(`🎫 Ticket creado por ${member.user}`)
-      .setDescription(
-        `**URL: ** https://mahto.id/chat-exporter?url=${
-          msg.attachments.first()?.url
-        }`
-      )
-      .setThumbnail(member.displayAvatarURL({ dynamic: true }))
+      .setAuthor({
+        name: member.nickname,
+        iconURL: member.displayAvatarURL({ dynamic: true }),
+      })
+      .setDescription(`🎫 Ticket creado por ${member.user}`)
       .setTimestamp();
-    canalTickets.send({ embeds: [embed] });
+    const button = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel("Ver ticket")
+        .setURL(
+          `https://mahto.id/chat-exporter?url=${msg.attachments.first()?.url}`
+        )
+        .setStyle(ButtonStyle.Link)
+    );
+    canalTickets.send({ embeds: [embed], components: [button] });
 
     const reason = interaction.fields.getTextInputValue("closeReasonTicket");
     await interaction.reply({

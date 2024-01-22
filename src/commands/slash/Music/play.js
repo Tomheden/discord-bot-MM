@@ -3,8 +3,6 @@ const {
   SlashCommandBuilder,
 } = require("discord.js");
 const ExtendedClient = require("../../../class/ExtendedClient");
-const { DisTube } = require("distube");
-const { YtDlpPlugin } = require("@distube/yt-dlp");
 
 module.exports = {
   structure: new SlashCommandBuilder()
@@ -21,16 +19,9 @@ module.exports = {
    * @param {ChatInputCommandInteraction} interaction
    */
   run: async (client, interaction) => {
-    client.distube = new DisTube(client, {
-      leaveOnStop: false,
-      emitNewSongOnly: true,
-      emitAddSongWhenCreatingQueue: false,
-      emitAddListWhenCreatingQueue: false,
-      plugins: [new YtDlpPlugin()],
-    });
     if (!interaction.member.voice.channel) {
       return interaction.reply({
-        content: "✖️ | Necesitas estar en un canal de voz",
+        content: "❌ | Necesitas estar en un canal de voz",
         ephemeral: true,
       });
     }
@@ -43,6 +34,6 @@ module.exports = {
         interaction,
       }
     );
-    await interaction.reply(`✔️ | Añadiendo la canción...`);
+    interaction.reply(`✔️ | Añadiendo la canción...`);
   },
 };

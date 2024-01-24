@@ -20,7 +20,7 @@ module.exports = {
    */
   run: async (client, interaction) => {
     if (!interaction.member.voice.channel) {
-      return interaction.reply({
+      interaction.reply({
         content: "❌ | Necesitas estar en un canal de voz",
         ephemeral: true,
       });
@@ -34,6 +34,9 @@ module.exports = {
         interaction,
       }
     );
-    interaction.reply(`✔️ | Añadiendo la canción...`);
+    interaction.reply({
+      content: `✔️ | Añadiendo la canción...`,
+      ephemeral: true,
+    });
   },
 };

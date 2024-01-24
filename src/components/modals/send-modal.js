@@ -14,6 +14,8 @@ module.exports = {
     const data = await send.findOne({ guild: interaction.guild.id });
     const mensaje = interaction.fields.getTextInputValue("mensaje");
 
+    const embed = new EmbedBuilder().setColor("c2c2c2").setDescription(mensaje);
+
     const canal = client.channels.cache.get(data.channel);
 
     await send.deleteOne({ guild: interaction.guild.id });
@@ -21,6 +23,6 @@ module.exports = {
       content: "Enviando el mensaje a " + canal.name,
       ephemeral: true,
     });
-    canal.send({ content: mensaje });
+    canal.send({ embeds: [embed] });
   },
 };

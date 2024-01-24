@@ -2,6 +2,12 @@ const { log } = require("../../functions");
 const ExtendedClient = require("../../class/ExtendedClient");
 const { DisTube } = require("distube");
 const { YtDlpPlugin } = require("@distube/yt-dlp");
+const {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} = require("discord.js");
 
 module.exports = {
   event: "ready",
@@ -13,8 +19,10 @@ module.exports = {
    * @returns
    */
   run: (_, client) => {
+    var msg = "";
     client.distube = new DisTube(client, {
       leaveOnStop: false,
+      emptyCooldown: 20,
       emitNewSongOnly: true,
       emitAddSongWhenCreatingQueue: false,
       emitAddListWhenCreatingQueue: false,
@@ -33,11 +41,72 @@ module.exports = {
           : "Off"
       }\` | Autoplay: \`${queue.autoplay ? "On" : "Off"}\``;
     client.distube
-      .on("playSong", (queue, song) =>
-        queue.textChannel.send(
-          `▶️ | Reproduciendo \`${song.name}\` - \`${song.formattedDuration}\``
-        )
-      )
+      .on("playSong", (queue, song) => {
+        const select = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId("stopButton")
+            .setEmoji(`<:stop:1199750571633152061>`)
+            .setStyle(ButtonStyle.Danger),
+          new ButtonBuilder()
+            .setCustomId("skipButton")
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji(`<:next:1199750568688746611>`)
+        );
+        const embed = new EmbedBuilder()
+          .setColor("Blurple")
+          .setTitle(`🎧 Ahora sonando:`)
+          .setThumbnail(song.thumbnail)
+          .setDescription(`\`${song.name}\` - \`${song.formattedDuration}\``)
+          .setFooter({
+            text: `Solicitada por ${song.member.nickname}`,
+            iconURL: song.member.displayAvatarURL({ dynamic: true }),
+          });
+        msg = queue.textChannel.send({
+          embeds: [embed],
+          components: [select],
+        });
+      })
+      .on("finishSong", (queue, song) => {
+        msg
+          .then((message) => {
+            // Acceder al valor de la propiedad id
+            const messageObj = message;
+
+            // Hacer lo que quieras con el valor messageId
+            const embedReceived = message.embeds.at(0);
+
+            const embed = new EmbedBuilder()
+              .setColor(embedReceived.color)
+              .setTitle(embedReceived.title)
+              .setThumbnail(embedReceived.thumbnail.url)
+              .setDescription(embedReceived.description)
+              .setFooter({
+                text: embedReceived.footer.text,
+                iconURL: embedReceived.footer.iconURL,
+              });
+
+            const select = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId("stopButton")
+                .setEmoji(`<:stop:1199750571633152061>`)
+                .setStyle(ButtonStyle.Danger)
+                .setDisabled(true),
+              new ButtonBuilder()
+                .setCustomId("skipButton")
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji(`<:next:1199750568688746611>`)
+                .setDisabled(true)
+            );
+            queue.textChannel.messages.edit(message, {
+              embeds: [embed],
+              components: [select],
+            });
+          })
+          .catch((error) => {
+            // Manejar errores si la Promise es rechazada
+            console.error("Error al obtener el mensaje:", error);
+          });
+      })
       .on("addSong", (queue, song) =>
         queue.textChannel.send(
           `✔️ | Añadida ${song.name} - \`${song.formattedDuration}\` a la cola`
@@ -57,20 +126,24 @@ module.exports = {
           );
         else console.error(e);
       })
-      .on("empty", (channel) =>
-        channel.send("Canal de voz vacío, desconectado...")
-      )
+      .on("empty", (queue, channel) => {
+        channel.send("Canal de voz vacío, desconectado...");
+        queue.voice.leave();
+      })
       .on("searchNoResult", (message, query) =>
         message.channel.send(`✖️ | Sin resultados para \`${query}\`!`)
       )
+      .on("deleteQueue", (queue) => {
+        setTimeout(async () => {
+          queue.textChannel.send(`✔️ | Sesión de música finalizada`);
+          queue.voice.leave();
+        }, 10000);
+      })
       .on("finish", (queue) => {
-        const lastSong = queue.songs[0]; // Get the last played song
-        if (lastSong && Date.now() - lastSong.playedAt > 5000) {
-          queue.textChannel.send(
-            "Sin actividad en los últimos 3 minutos, desconectando..."
-          );
-          queue.voiceChannel.leave();
-        }
+        setTimeout(async () => {
+          queue.textChannel.send(`✔️ | Sesión de música finalizada`);
+          queue.voice.leave();
+        }, 10000);
       });
 
     log("Logged in as: " + client.user.tag, "done");

@@ -15,6 +15,7 @@ module.exports = {
     var name = channel.name;
     name = name.replace("ticket-", "");
     const member = await interaction.guild.members.cache.get(name);
+    const reason = interaction.fields.getTextInputValue("closeReasonTicket");
 
     // CREAMOS EL TRANSCRIPT
     const file = await createTranscript(interaction.channel, {
@@ -40,7 +41,9 @@ module.exports = {
         name: member.nickname,
         iconURL: member.displayAvatarURL({ dynamic: true }),
       })
-      .setDescription(`🎫 Ticket creado por ${member.user}`)
+      .setDescription(
+        `🎫 Ticket creado por ${member.user}\n\n🔐 Cerrado por ${interaction.member} con motivo de \`${reason}\``
+      )
       .setTimestamp();
     const button = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -52,7 +55,6 @@ module.exports = {
     );
     canalTickets.send({ embeds: [embed], components: [button] });
 
-    const reason = interaction.fields.getTextInputValue("closeReasonTicket");
     await interaction.reply({
       content: `🔒 Este ticket se cerrará en unos segundos...`,
     });

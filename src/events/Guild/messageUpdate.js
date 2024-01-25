@@ -14,7 +14,7 @@ module.exports = {
    * @param {Message<true>} oldMessage
    * @returns
    */
-  run: async (client, newMessage, oldMessage) => {
+  run: async (client, oldMessage, newMessage) => {
     // Verificar si el mensaje editado no es del bot
     if (!newMessage.author.bot && newMessage != oldMessage) {
       const user = oldMessage.author;

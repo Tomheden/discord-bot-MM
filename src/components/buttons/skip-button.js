@@ -65,19 +65,27 @@ module.exports = {
       });
     try {
       if (queue.songs.length <= 1) {
-        message.edit({ embeds: [embed], components: [select] });
+        message.edit({
+          embeds: [
+            embed.setDescription(
+              embedReceived.description +
+                `\n\n**${interaction.member.displayName}** ha saltado la canción, sesión finalizada.\n`
+            ),
+          ],
+          components: [select],
+        });
         queue.stop();
         interaction.reply({
-          content: `.`,
+          content: `Finalizando sesion`,
           ephemeral: true,
         });
         interaction.deleteReply();
       } else {
-        const song = await queue.skip();
         if (queue.paused) queue.resume();
-        message.edit({ embeds: [embed], components: [select] });
+        await message.edit({ embeds: [embed], components: [select] });
+        const song = await queue.skip();
         interaction.reply({
-          content: `.`,
+          content: `Saltando cancion`,
           ephemeral: true,
         });
         interaction.deleteReply();

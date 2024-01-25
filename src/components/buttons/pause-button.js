@@ -52,7 +52,7 @@ module.exports = {
     message.edit({ embeds: [embed], components: [select] });
     queue.pause();
     interaction.reply({
-      content: `.`,
+      content: `Pausando la canción...`,
       ephemeral: true,
     });
     interaction.deleteReply();

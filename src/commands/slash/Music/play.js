@@ -35,7 +35,7 @@ module.exports = {
         }
       );
       interaction.reply({
-        content: `.`,
+        content: `Añadiendo cancion`,
         ephemeral: true,
       });
       interaction.deleteReply();

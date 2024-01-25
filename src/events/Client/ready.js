@@ -48,6 +48,10 @@ module.exports = {
             .setEmoji(`<:stop:1199750571633152061>`)
             .setStyle(ButtonStyle.Danger),
           new ButtonBuilder()
+            .setCustomId("pauseButton")
+            .setEmoji(`<:pause:1199750570328719442>`)
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
             .setCustomId("skipButton")
             .setStyle(ButtonStyle.Primary)
             .setEmoji(`<:next:1199750568688746611>`)
@@ -58,7 +62,7 @@ module.exports = {
           .setThumbnail(song.thumbnail)
           .setDescription(`\`${song.name}\` - \`${song.formattedDuration}\``)
           .setFooter({
-            text: `Solicitada por ${song.member.nickname}`,
+            text: `Solicitada por ${song.member.displayName}`,
             iconURL: song.member.displayAvatarURL({ dynamic: true }),
           });
         msg = queue.textChannel.send({
@@ -76,7 +80,7 @@ module.exports = {
             const embedReceived = message.embeds.at(0);
 
             const embed = new EmbedBuilder()
-              .setColor(embedReceived.color)
+              .setColor("e63535")
               .setTitle(embedReceived.title)
               .setThumbnail(embedReceived.thumbnail.url)
               .setDescription(embedReceived.description)
@@ -84,12 +88,24 @@ module.exports = {
                 text: embedReceived.footer.text,
                 iconURL: embedReceived.footer.iconURL,
               });
-
+            var pauseOrResume = "pauseButton";
+            var buttonPauseOrResume = "<:pause:1199750570328719442>";
+            var buttonColor = ButtonStyle.Secondary;
+            if (queue.paused) {
+              pauseOrResume = "resumeButton";
+              buttonPauseOrResume = "<:play:1199750566243483688>";
+              buttonColor = ButtonStyle.Success;
+            }
             const select = new ActionRowBuilder().addComponents(
               new ButtonBuilder()
                 .setCustomId("stopButton")
                 .setEmoji(`<:stop:1199750571633152061>`)
                 .setStyle(ButtonStyle.Danger)
+                .setDisabled(true),
+              new ButtonBuilder()
+                .setCustomId(pauseOrResume)
+                .setEmoji(buttonPauseOrResume)
+                .setStyle(buttonColor)
                 .setDisabled(true),
               new ButtonBuilder()
                 .setCustomId("skipButton")
@@ -107,11 +123,20 @@ module.exports = {
             console.error("Error al obtener el mensaje:", error);
           });
       })
-      .on("addSong", (queue, song) =>
-        queue.textChannel.send(
-          `✔️ | Añadida ${song.name} - \`${song.formattedDuration}\` a la cola`
-        )
-      )
+      .on("addSong", (queue, song) => {
+        const embed = new EmbedBuilder()
+          .setColor("76ed61")
+          .setTitle(
+            `<:addqueue:1199843654525784084> Canción añadida a la cola:`
+          )
+          .setThumbnail(song.thumbnail)
+          .setDescription(`\`${song.name}\` - \`${song.formattedDuration}\``)
+          .setFooter({
+            text: `Solicitada por ${song.member.displayName}`,
+            iconURL: song.member.displayAvatarURL({ dynamic: true }),
+          });
+        queue.textChannel.send({ embeds: [embed] });
+      })
       .on("addList", (queue, playlist) =>
         queue.textChannel.send(
           `✔️ | Añadida la playlist \`${playlist.name}\` (${
@@ -134,16 +159,13 @@ module.exports = {
         message.channel.send(`✖️ | Sin resultados para \`${query}\`!`)
       )
       .on("deleteQueue", (queue) => {
-        setTimeout(async () => {
-          queue.textChannel.send(`✔️ | Sesión de música finalizada`);
-          queue.voice.leave();
-        }, 10000);
-      })
-      .on("finish", (queue) => {
-        setTimeout(async () => {
-          queue.textChannel.send(`✔️ | Sesión de música finalizada`);
-          queue.voice.leave();
-        }, 10000);
+        const embed = new EmbedBuilder()
+          .setColor("e63535")
+          .setTitle(`🎧 Sesión de música finalizada`)
+          .setDescription(`Usa \`/play\` para reproducir una canción.`);
+
+        queue.textChannel.send({ embeds: [embed] });
+        queue.voice.leave();
       });
 
     log("Logged in as: " + client.user.tag, "done");

@@ -19,13 +19,22 @@ module.exports = {
     const message = interaction.message;
     const embedReceived = message.embeds.at(0);
 
+    var pauseOrResume = "pauseButton";
+    var buttonPauseOrResume = "<:pause:1199750570328719442>";
+    var buttonColor = ButtonStyle.Secondary;
+    if (queue.paused) {
+      pauseOrResume = "resumeButton";
+      buttonPauseOrResume = "<:play:1199750566243483688>";
+      buttonColor = ButtonStyle.Success;
+    }
+
     const embed = new EmbedBuilder()
       .setColor(embedReceived.color)
       .setTitle(embedReceived.title)
       .setThumbnail(embedReceived.thumbnail.url)
       .setDescription(
         embedReceived.description +
-          `\n\n**${interaction.member.nickname}** ha saltado la canción\n`
+          `\n\n**${interaction.member.displayName}** ha saltado la canción\n`
       )
       .setFooter({
         text: embedReceived.footer.text,
@@ -39,6 +48,11 @@ module.exports = {
         .setStyle(ButtonStyle.Danger)
         .setDisabled(true),
       new ButtonBuilder()
+        .setCustomId(pauseOrResume)
+        .setEmoji(buttonPauseOrResume)
+        .setStyle(buttonColor)
+        .setDisabled(true),
+      new ButtonBuilder()
         .setCustomId("skipButton")
         .setStyle(ButtonStyle.Primary)
         .setEmoji(`<:next:1199750568688746611>`)
@@ -48,23 +62,25 @@ module.exports = {
     if (!queue)
       return interaction.channel.send({
         content: `❌ | No hay nada sonando ahora mismo`,
-        ephemeral: true,
       });
     try {
       if (queue.songs.length <= 1) {
-        interaction.reply({
-          content: `❌ | No hay más canciones para saltar, parando la actual...`,
-          ephemeral: true,
-        });
         message.edit({ embeds: [embed], components: [select] });
         queue.stop();
-      } else {
-        const song = await queue.skip();
         interaction.reply({
-          content: `✔️ | Saltando la canción...`,
+          content: `.`,
           ephemeral: true,
         });
+        interaction.deleteReply();
+      } else {
+        const song = await queue.skip();
+        if (queue.paused) queue.resume();
         message.edit({ embeds: [embed], components: [select] });
+        interaction.reply({
+          content: `.`,
+          ephemeral: true,
+        });
+        interaction.deleteReply();
       }
     } catch (e) {
       interaction.reply(`❌ | ${e}`);

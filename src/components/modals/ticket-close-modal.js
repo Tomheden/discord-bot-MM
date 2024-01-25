@@ -38,11 +38,11 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setColor("Blurple")
       .setAuthor({
-        name: member.nickname,
+        name: member.displayName,
         iconURL: member.displayAvatarURL({ dynamic: true }),
       })
       .setDescription(
-        `🎫 Ticket creado por ${member.user}\n\n🔐 Cerrado por ${interaction.member} con motivo de \`${reason}\``
+        `🎫 Ticket creado por ${member.user}\n\n🔐 Cerrado por ${interaction.member.user} con motivo de \`${reason}\``
       )
       .setTimestamp();
     const button = new ActionRowBuilder().addComponents(

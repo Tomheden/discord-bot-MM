@@ -1,5 +1,5 @@
+const { ButtonInteraction, Embed } = require("discord.js");
 const {
-  ButtonInteraction,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
@@ -8,33 +8,24 @@ const {
 const ExtendedClient = require("../../class/ExtendedClient");
 
 module.exports = {
-  customId: "stopButton",
+  customId: "resumeButton",
   /**
    *
    * @param {ExtendedClient} client
    * @param {ButtonInteraction} interaction
    */
   run: async (client, interaction) => {
-    const message = interaction.message;
     const queue = client.distube.getQueue(interaction);
+    const message = interaction.message;
     const embedReceived = message.embeds.at(0);
 
-    var pauseOrResume = "pauseButton";
-    var buttonPauseOrResume = "<:pause:1199750570328719442>";
-    var buttonColor = ButtonStyle.Secondary;
-    if (queue.paused) {
-      pauseOrResume = "resumeButton";
-      buttonPauseOrResume = "<:play:1199750566243483688>";
-      buttonColor = ButtonStyle.Success;
-    }
-
     const embed = new EmbedBuilder()
-      .setColor("e63535")
+      .setColor(embedReceived.color)
       .setTitle(embedReceived.title)
       .setThumbnail(embedReceived.thumbnail.url)
       .setDescription(
         embedReceived.description +
-          `\n\n**${interaction.member.displayName}** ha finalizado la sesión\n`
+          `\n\n**${interaction.member.displayName}** ha reanudado la canción\n`
       )
       .setFooter({
         text: embedReceived.footer.text,
@@ -45,27 +36,21 @@ module.exports = {
       new ButtonBuilder()
         .setCustomId("stopButton")
         .setEmoji(`<:stop:1199750571633152061>`)
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(true),
+        .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
-        .setCustomId(pauseOrResume)
-        .setEmoji(buttonPauseOrResume)
-        .setStyle(buttonColor)
-        .setDisabled(true),
+        .setCustomId("pauseButton")
+        .setEmoji(`<:pause:1199750570328719442>`)
+        .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId("skipButton")
         .setStyle(ButtonStyle.Primary)
         .setEmoji(`<:next:1199750568688746611>`)
-        .setDisabled(true)
     );
 
     if (!queue)
-      interaction.reply({
-        content: `✖️ | No hay nada sonando ahora mismo`,
-        ephemeral: true,
-      });
-    queue.stop();
+      return interaction.channel.send(`❌ | No hay nada sonando ahora mismo`);
     message.edit({ embeds: [embed], components: [select] });
+    queue.resume();
     interaction.reply({
       content: `.`,
       ephemeral: true,

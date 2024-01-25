@@ -24,19 +24,21 @@ module.exports = {
         content: "❌ | Necesitas estar en un canal de voz",
         ephemeral: true,
       });
+    } else {
+      client.distube.play(
+        interaction.member.voice.channel,
+        interaction.options.getString("cancion"),
+        {
+          member: interaction.member,
+          textChannel: interaction.channel,
+          interaction,
+        }
+      );
+      interaction.reply({
+        content: `.`,
+        ephemeral: true,
+      });
+      interaction.deleteReply();
     }
-    client.distube.play(
-      interaction.member.voice.channel,
-      interaction.options.getString("cancion"),
-      {
-        member: interaction.member,
-        textChannel: interaction.channel,
-        interaction,
-      }
-    );
-    interaction.reply({
-      content: `✔️ | Añadiendo la canción...`,
-      ephemeral: true,
-    });
   },
 };

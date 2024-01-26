@@ -137,13 +137,22 @@ module.exports = {
           });
         queue.textChannel.send({ embeds: [embed] });
       })
-      .on("addList", (queue, playlist) =>
-        queue.textChannel.send(
-          `✔️ | Añadida la playlist \`${playlist.name}\` (${
-            playlist.songs.length
-          } canciones) a la cola\n${status(queue)}`
-        )
-      )
+      .on("addList", (queue, playlist) => {
+        const embed = new EmbedBuilder()
+          .setColor("76ed61")
+          .setTitle(
+            `<:addqueue:1199843654525784084> Playlist añadida a la cola:`
+          )
+          .setThumbnail(playlist.thumbnail)
+          .setDescription(
+            `\`${playlist.name}\` - \`${playlist.songs.length} canciones\``
+          )
+          .setFooter({
+            text: `Solicitada por ${playlist.member.displayName}`,
+            iconURL: playlist.member.displayAvatarURL({ dynamic: true }),
+          });
+        queue.textChannel.send({ embeds: [embed] });
+      })
       .on("error", (channel, e) => {
         if (channel)
           channel.send(

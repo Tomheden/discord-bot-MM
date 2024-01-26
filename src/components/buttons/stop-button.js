@@ -66,10 +66,7 @@ module.exports = {
       });
     queue.stop();
     message.edit({ embeds: [embed], components: [select] });
-    interaction.reply({
-      content: `.`,
-      ephemeral: true,
-    });
+    interaction.deferReply();
     interaction.deleteReply();
   },
 };

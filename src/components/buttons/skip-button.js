@@ -75,19 +75,13 @@ module.exports = {
           components: [select],
         });
         queue.stop();
-        interaction.reply({
-          content: `Finalizando sesion`,
-          ephemeral: true,
-        });
+        interaction.deferReply();
         interaction.deleteReply();
       } else {
         if (queue.paused) queue.resume();
         await message.edit({ embeds: [embed], components: [select] });
         const song = await queue.skip();
-        interaction.reply({
-          content: `Saltando cancion`,
-          ephemeral: true,
-        });
+        interaction.deferReply();
         interaction.deleteReply();
       }
     } catch (e) {

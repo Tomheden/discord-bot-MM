@@ -34,10 +34,7 @@ module.exports = {
           interaction,
         }
       );
-      interaction.reply({
-        content: `Añadiendo cancion`,
-        ephemeral: true,
-      });
+      interaction.deferReply();
       interaction.deleteReply();
     }
   },

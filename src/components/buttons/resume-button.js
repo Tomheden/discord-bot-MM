@@ -51,10 +51,7 @@ module.exports = {
       return interaction.channel.send(`❌ | No hay nada sonando ahora mismo`);
     message.edit({ embeds: [embed], components: [select] });
     queue.resume();
-    interaction.reply({
-      content: `.`,
-      ephemeral: true,
-    });
+    interaction.deferReply();
     interaction.deleteReply();
   },
 };

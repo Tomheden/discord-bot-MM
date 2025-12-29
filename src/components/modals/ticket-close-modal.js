@@ -14,7 +14,8 @@ module.exports = {
     var channel = interaction.channel;
     var name = channel.name;
     name = name.replace("ticket-", "");
-    const member = await interaction.guild.members.cache.get(name);
+    const member = await client.users.fetch(name);
+    //const member = await interaction.guild.members.cache.get(name);
     const reason = interaction.fields.getTextInputValue("closeReasonTicket");
 
     // CREAMOS EL TRANSCRIPT
@@ -38,11 +39,11 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setColor("Blurple")
       .setAuthor({
-        name: member.displayName,
+        name: member.username,
         iconURL: member.displayAvatarURL({ dynamic: true }),
       })
       .setDescription(
-        `🎫 Ticket creado por ${member.user}\n\n🔐 Cerrado por ${interaction.member.user} con motivo de \`${reason}\``
+        `🎫 Ticket creado por <@${name}>\n\n🔐 Cerrado por ${interaction.member.user} con motivo de \`${reason}\``
       )
       .setTimestamp();
     const button = new ActionRowBuilder().addComponents(

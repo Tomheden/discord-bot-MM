@@ -16,14 +16,15 @@ module.exports = {
    */
   run: async (client, oldMessage, newMessage) => {
     // Verificar si el mensaje editado no es del bot
-    if (!newMessage.author.bot && newMessage != oldMessage) {
+    if (!newMessage.author.bot && newMessage !== oldMessage) {
       const user = oldMessage.author;
       const logChannel = client.channels.cache.get("1113152978917007432");
 
       // Comprobar si el canal de registros existe y es accesible
       if (
         logChannel &&
-        logChannel.permissionsFor(client.user).has("SEND_MESSAGES")
+        logChannel.permissionsFor(client.user).has("SEND_MESSAGES") &&
+        oldMessage.guild.id !== "718361407619465297"
       ) {
         const logMessage = `Mensaje editado en ${newMessage.channel} por ${user} _(ID: ${user.id})_:\nContenido anterior:\n \`${oldMessage.content}\`\nContenido actualizado:\n \`${newMessage.content}\``;
         logChannel.send({

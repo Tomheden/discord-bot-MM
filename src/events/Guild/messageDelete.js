@@ -22,7 +22,8 @@ module.exports = {
       // Comprobar si el canal de registros existe y es accesible
       if (
         logChannel &&
-        logChannel.permissionsFor(client.user).has("SEND_MESSAGES")
+        logChannel.permissionsFor(client.user).has("SEND_MESSAGES") &&
+        deletedMessage.guild.id !== "718361407619465297"
       ) {
         const logMessage = `Mensaje eliminado en ${deletedMessage.channel} por ${user} _(ID: ${user.id})_:\n\`${deletedMessage.content}\``;
         logChannel.send({

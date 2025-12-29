@@ -2,6 +2,7 @@ const { log } = require("../../functions");
 const ExtendedClient = require("../../class/ExtendedClient");
 const { DisTube } = require("distube");
 const { YtDlpPlugin } = require("@distube/yt-dlp");
+const { SpotifyPlugin } = require('@distube/spotify')
 const {
   EmbedBuilder,
   ActionRowBuilder,
@@ -26,7 +27,12 @@ module.exports = {
       emitNewSongOnly: true,
       emitAddSongWhenCreatingQueue: false,
       emitAddListWhenCreatingQueue: false,
-      plugins: [new YtDlpPlugin()],
+      plugins: [
+    new SpotifyPlugin({
+      emitEventsAfterFetching: true
+    }),
+    new YtDlpPlugin()
+  ],
     });
 
     //DISTUBE

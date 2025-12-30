@@ -1,6 +1,6 @@
 # discord-bot-MM (rebuild)
 
-Rebuild for Node 24 with slash commands. Features included:
+Rebuild for Node 20 with slash commands. Features included:
 
 - Tickets (panel, create, close, transcript)
 - Message delete/edit logs

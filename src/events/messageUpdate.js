@@ -46,9 +46,9 @@ module.exports = {
     await logChannel.send({
       embeds: [
         new EmbedBuilder()
-          .setTitle("Message edited")
+          .setTitle("Mensaje editado")
           .setDescription(
-            `Channel: ${after.channel}\nUser: ${user} (ID: ${user.id})\n\nBefore:\n${beforeContent}\n\nAfter:\n${afterContent}`
+            `Canal: ${after.channel}\nUsuario: ${user} (ID: ${user.id})\n\nAntes:\n${beforeContent}\n\nDespués:\n${afterContent}`
           )
           .setColor("#349eeb")
           .setThumbnail(user.displayAvatarURL({ dynamic: true })),

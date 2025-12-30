@@ -31,8 +31,8 @@ module.exports = {
     await logChannel.send({
       embeds: [
         new EmbedBuilder()
-          .setTitle("Message deleted")
-          .setDescription(`Channel: ${fullMessage.channel}\nUser: ${user} (ID: ${user.id})\n\n${content}`)
+          .setTitle("Mensaje eliminado")
+          .setDescription(`Canal: ${fullMessage.channel}\nUsuario: ${user} (ID: ${user.id})\n\n${content}`)
           .setColor("#e63e49")
           .setThumbnail(user.displayAvatarURL({ dynamic: true })),
       ],

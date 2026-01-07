@@ -1,7 +1,8 @@
-const fs = require("fs");
+﻿const fs = require("fs");
 const path = require("path");
 
-const loadCommands = (client) => {
+const loadCommands = (client, options = {}) => {
+  const { allowedCategories } = options;
   const commands = new Map();
   const commandData = [];
   const baseDir = path.join(__dirname, "..", "commands");
@@ -19,6 +20,14 @@ const loadCommands = (client) => {
 
       if (!entry.name.endsWith(".js")) {
         continue;
+      }
+      if (Array.isArray(allowedCategories) && allowedCategories.length > 0) {
+        const relativePath = path.relative(baseDir, fullPath);
+        const category = relativePath.split(path.sep)[0];
+
+        if (!allowedCategories.includes(category)) {
+          continue;
+        }
       }
 
       const command = require(fullPath);
@@ -46,3 +55,5 @@ const loadCommands = (client) => {
 module.exports = {
   loadCommands,
 };
+
+

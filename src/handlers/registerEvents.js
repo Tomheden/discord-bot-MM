@@ -1,7 +1,8 @@
-const fs = require("fs");
+﻿const fs = require("fs");
 const path = require("path");
 
-const registerEvents = (client) => {
+const registerEvents = (client, options = {}) => {
+  const { allowedEvents } = options;
   const baseDir = path.join(__dirname, "..", "events");
 
   if (!fs.existsSync(baseDir)) {
@@ -17,6 +18,11 @@ const registerEvents = (client) => {
     if (!eventModule || !eventModule.event || !eventModule.run) {
       continue;
     }
+    if (Array.isArray(allowedEvents) && allowedEvents.length > 0) {
+      if (!allowedEvents.includes(eventModule.event)) {
+        continue;
+      }
+    }
 
     if (eventModule.once) {
       client.once(eventModule.event, (...args) => eventModule.run(client, ...args));
@@ -29,3 +35,4 @@ const registerEvents = (client) => {
 module.exports = {
   registerEvents,
 };
+

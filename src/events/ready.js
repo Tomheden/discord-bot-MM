@@ -1,4 +1,4 @@
-const {
+﻿const {
   Events,
   EmbedBuilder,
   ActionRowBuilder,
@@ -7,14 +7,21 @@ const {
 } = require("discord.js");
 const { registerBirthdayCron } = require("../commands/utility/bday");
 const { DisTube, DisTubeError } = require("distube");
-const { YtDlpPlugin, json } = require("@distube/yt-dlp");
-const ffmpegPath = require("ffmpeg-static");
+const { YtDlpPlugin, download, json } = require("@distube/yt-dlp");
+const ffmpegStaticPath = require("ffmpeg-static");
+const fs = require("fs");
+const path = require("path");
 
 module.exports = {
   event: Events.ClientReady,
   once: true,
   run: (client) => {
     console.log(`Logged in as ${client.user.tag}`);
+    const isMusicClient = client.mode === "music";
+
+    if (!isMusicClient) {
+      registerBirthdayCron(client);
+    }
     const voiceDebug = process.env.VOICE_DEBUG === "1";
     if (voiceDebug) {
       client.ws.on("VOICE_SERVER_UPDATE", (payload) => {
@@ -49,6 +56,20 @@ module.exports = {
       });
     }
 
+    const ffmpegPath = process.env.FFMPEG_PATH || ffmpegStaticPath;
+    try {
+      fs.chmodSync(ffmpegPath, 0o755);
+    } catch (error) {
+      if (voiceDebug) {
+        console.log(`[ffmpeg] chmod failed: ${error?.message || error}`);
+      }
+    }
+    if (voiceDebug) {
+      const exists = fs.existsSync(ffmpegPath);
+      console.log(
+        `[ffmpeg] using path=${ffmpegPath} exists=${exists ? "yes" : "no"}`
+      );
+    }
     client.distube = new DisTube(client, {
       leaveOnStop: false,
       leaveOnEmpty: false,
@@ -61,6 +82,19 @@ module.exports = {
       },
       plugins: [new YtDlpPlugin({ update: false })],
     });
+    const ytDlpDistPath = require.resolve("@distube/yt-dlp/dist/index.js");
+    const ytDlpDir = path.join(path.dirname(ytDlpDistPath), "..", "bin");
+    const ytDlpFilename = process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp";
+    const ytDlpPath = path.join(ytDlpDir, ytDlpFilename);
+    if (!fs.existsSync(ytDlpPath)) {
+      download()
+        .then((version) => {
+          console.log(`[yt-dlp] descargado (${version || "version desconocida"})`);
+        })
+        .catch((error) => {
+          console.error("[yt-dlp] descarga fallida:", error);
+        });
+    }
     const originalAttachStreamInfo =
       client.distube.handler.attachStreamInfo.bind(client.distube.handler);
     client.distube.handler.attachStreamInfo = async (song) => {
@@ -229,6 +263,11 @@ module.exports = {
           console.error(error);
         }
       })
+      .on("ffmpegDebug", (debug) => {
+        if (process.env.VOICE_DEBUG === "1") {
+          console.log(`[ffmpeg] ${debug}`);
+        }
+      })
       .on("empty", (queue, channel) => {
         channel.send("Canal de voz vacio, desconectado...");
         queue.voice.leave();
@@ -246,6 +285,6 @@ module.exports = {
         queue.voice.leave();
       });
 
-    registerBirthdayCron(client);
   },
 };
+

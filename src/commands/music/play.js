@@ -9,6 +9,16 @@ const {
   VoiceConnectionStatus,
   VoiceConnectionDisconnectReason,
 } = require("@discordjs/voice");
+const { json } = require("@distube/yt-dlp");
+
+const isUrl = (value) => {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -61,7 +71,7 @@ module.exports = {
       return;
     }
 
-    const query = interaction.options.getString("cancion");
+    let query = interaction.options.getString("cancion");
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
       await interaction.editReply({
@@ -100,6 +110,26 @@ module.exports = {
           console.error("[voice] connection error:", error);
         });
       }
+      if (!isUrl(query)) {
+        const search = await json(`ytsearch1:${query}`, {
+          dumpSingleJson: true,
+          noWarnings: true,
+          noCallHome: true,
+          preferFreeFormats: true,
+          skipDownload: true,
+          simulate: true,
+        });
+        const entry = search?.entries?.[0];
+        const resolvedUrl = entry?.webpage_url || entry?.url;
+        if (!resolvedUrl) {
+          await interaction.editReply({
+            content: "\u274C | No encontre resultados para esa busqueda.",
+          });
+          return;
+        }
+        query = resolvedUrl;
+      }
+
       await client.distube.play(voiceChannel, query, {
         member: interaction.member,
         textChannel: interaction.channel,

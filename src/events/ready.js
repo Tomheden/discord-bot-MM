@@ -6,6 +6,7 @@ const {
   ButtonStyle,
 } = require("discord.js");
 const { registerBirthdayCron } = require("../commands/utility/bday");
+const { registerStatsRefreshCron } = require("../services/stats/statsRefreshScheduler");
 const { DisTube, DisTubeError } = require("distube");
 const { download, json } = require("@distube/yt-dlp");
 const { LocalYtDlpPlugin } = require("../services/music/ytDlpExtractor");
@@ -21,6 +22,7 @@ module.exports = {
     console.log(`Logged in as ${client.user.tag}`);
 
     registerBirthdayCron(client);
+    registerStatsRefreshCron(client);
     const voiceDebug = process.env.VOICE_DEBUG === "1";
     if (voiceDebug) {
       client.ws.on("VOICE_SERVER_UPDATE", (payload) => {

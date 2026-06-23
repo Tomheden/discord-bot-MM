@@ -73,19 +73,27 @@ Writes are buffered in memory and flushed periodically. Configure it with:
 ```env
 STATS_DATA_FILE=stats.json
 STATS_FLUSH_INTERVAL_MS=30000
+STATS_REFRESH_ENABLED=1
+STATS_REFRESH_SCHEDULE=0 */3 * * *
+STATS_REFRESH_ACTIVE_WINDOW_DAYS=30
 ```
+
+`STATS_REFRESH_SCHEDULE` uses cron syntax. The default refresh runs every 3 hours,
+updates cached profile metadata for recently active users, stores refresh metadata,
+and adds elapsed time for currently open voice sessions.
 
 ## Stats API
 
-The internal API uses Express. It listens on `127.0.0.1:3001` by default and prints a test URL on startup.
+The internal API uses Express. On Wisp it listens on `0.0.0.0:9793` by default and prints a public test URL on startup.
 
 ```env
 STATS_API_ENABLED=1
-STATS_API_HOST=127.0.0.1
-STATS_API_PORT=3001
+STATS_API_HOST=0.0.0.0
+STATS_API_PORT=9793
+STATS_API_PUBLIC_URL=https://mundominecraft.wisp.uno
 STATS_DEFAULT_GUILD_ID=your_guild_id
 STATS_API_KEY=optional-secret
-STATS_API_CORS_ORIGIN=https://your-web.example
+STATS_API_CORS_ORIGIN=https://mundominecraft.wisp.uno
 STATS_RATE_LIMIT_WINDOW_MS=60000
 STATS_RATE_LIMIT_MAX=120
 ```

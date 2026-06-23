@@ -3,7 +3,7 @@ const path = require("path");
 const { getDataPath } = require("../../utils/storage");
 
 // File-backed repository: owns the versioned stats schema and all read/write queries.
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
 const DEFAULT_FILE_NAME = "stats.json";
 
 const makeKey = (...parts) => parts.map((part) => String(part)).join(":");
@@ -28,6 +28,7 @@ const emptyStatsData = () => {
     hourly_activity: {},
     voice_sessions: [],
     minecraft_links: {},
+    refresh_runs: [],
   };
 };
 
@@ -99,6 +100,16 @@ const normalizeData = (input) => {
       description: "Add Discord to Minecraft account links",
     });
     data.version = 2;
+  }
+
+  if (data.version < 3) {
+    data.refresh_runs = data.refresh_runs || [];
+    data.migrations.push({
+      version: 3,
+      applied_at: new Date().toISOString(),
+      description: "Add scheduled stats refresh metadata",
+    });
+    data.version = 3;
   }
 
   data.meta.updated_at = new Date().toISOString();
@@ -338,6 +349,78 @@ class StatsRepository {
     }
   }
 
+  recordPresenceSnapshot({ guildId, userId, username, joinedAt, timestamp }) {
+    const user = this.ensureUser({ guildId, userId, username, joinedAt, timestamp });
+    if (!user) {
+      return;
+    }
+
+    user.last_activity_at = toIsoString(timestamp);
+    user.updated_at = toIsoString(timestamp);
+  }
+
+  refreshOpenVoiceSessions(timestamp = new Date()) {
+    const now = toIsoString(timestamp);
+
+    for (const active of Object.values(this.data.active_voice_sessions)) {
+      if (!active?.guild_id || !active?.user_id || !active?.joined_at) {
+        continue;
+      }
+
+      const statsKey = makeKey(active.guild_id, active.user_id);
+      const joinedAtMs = new Date(active.joined_at).getTime();
+      const nowMs = new Date(now).getTime();
+      const durationSeconds = Math.max(0, Math.floor((nowMs - joinedAtMs) / 1000));
+      const alreadyCounted = Math.max(0, active.counted_seconds || 0);
+      const deltaSeconds = Math.max(0, durationSeconds - alreadyCounted);
+
+      if (deltaSeconds <= 0) {
+        continue;
+      }
+
+      const stats = this.data.voice_stats[statsKey] || {
+        guild_id: active.guild_id,
+        user_id: active.user_id,
+        total_voice_seconds: 0,
+        total_joins: 0,
+        total_leaves: 0,
+        last_voice_join_at: active.joined_at,
+        total_sessions: 0,
+      };
+      stats.total_voice_seconds += deltaSeconds;
+      this.data.voice_stats[statsKey] = stats;
+
+      const channelKey = makeKey(active.guild_id, active.user_id, active.channel_id);
+      const channelStats = this.data.voice_channel_stats[channelKey] || {
+        guild_id: active.guild_id,
+        user_id: active.user_id,
+        channel_id: active.channel_id,
+        total_voice_seconds: 0,
+        total_sessions: 0,
+        updated_at: now,
+      };
+      channelStats.total_voice_seconds += deltaSeconds;
+      channelStats.updated_at = now;
+      this.data.voice_channel_stats[channelKey] = channelStats;
+
+      const daily = this.ensureDailyActivity(active.guild_id, active.user_id, now);
+      daily.voice_seconds += deltaSeconds;
+
+      active.counted_seconds = durationSeconds;
+      active.updated_at = now;
+    }
+  }
+
+  recordRefreshRun({ guildId, activeUsers, timestamp }) {
+    this.data.refresh_runs.push({
+      guild_id: guildId,
+      active_users: activeUsers,
+      ran_at: toIsoString(timestamp),
+    });
+
+    this.data.refresh_runs = this.data.refresh_runs.slice(-100);
+  }
+
   recordVoiceJoin({ guildId, userId, username, joinedAt, channelId, timestamp }) {
     if (!isSnowflake(channelId)) {
       return;
@@ -383,6 +466,8 @@ class StatsRepository {
       0,
       Math.floor((new Date(now).getTime() - new Date(joinedAtIso).getTime()) / 1000)
     );
+    const alreadyCounted = Math.max(0, active?.counted_seconds || 0);
+    const deltaSeconds = Math.max(0, durationSeconds - alreadyCounted);
 
     const stats = this.data.voice_stats[statsKey] || {
       guild_id: guildId,
@@ -395,7 +480,7 @@ class StatsRepository {
     };
 
     stats.total_leaves += 1;
-    stats.total_voice_seconds += durationSeconds;
+    stats.total_voice_seconds += deltaSeconds;
     stats.total_sessions += durationSeconds > 0 ? 1 : 0;
     this.data.voice_stats[statsKey] = stats;
 
@@ -409,13 +494,13 @@ class StatsRepository {
       updated_at: now,
     };
 
-    channelStats.total_voice_seconds += durationSeconds;
+    channelStats.total_voice_seconds += deltaSeconds;
     channelStats.total_sessions += durationSeconds > 0 ? 1 : 0;
     channelStats.updated_at = now;
     this.data.voice_channel_stats[voiceChannelKey] = channelStats;
 
     const daily = this.ensureDailyActivity(guildId, userId, now);
-    daily.voice_seconds += durationSeconds;
+    daily.voice_seconds += deltaSeconds;
 
     this.data.voice_sessions.push({
       guild_id: guildId,

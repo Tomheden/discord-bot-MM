@@ -5,6 +5,14 @@ const { isSnowflake } = require("../services/stats/statsRepository");
 const isMinecraftId = (value) =>
   typeof value === "string" && /^[A-Za-z0-9_:-]{3,36}$/.test(value);
 
+const normalizeOrigin = (origin) => String(origin || "").replace(/\/$/, "");
+
+const parseCorsOrigins = (value) =>
+  String(value || "")
+    .split(",")
+    .map((origin) => normalizeOrigin(origin.trim()))
+    .filter(Boolean);
+
 const createRateLimiter = ({ windowMs, max }) => {
   const buckets = new Map();
 
@@ -59,28 +67,43 @@ const normalizeApiConfig = (config = {}) => ({
     config.enabled !== undefined
       ? config.enabled
       : process.env.STATS_API_ENABLED !== "0",
-  host: config.host || process.env.STATS_API_HOST || "127.0.0.1",
-  port: Number(config.port || process.env.STATS_API_PORT || 3001),
+  host: config.host || process.env.STATS_API_HOST || "0.0.0.0",
+  port: Number(config.port || process.env.STATS_API_PORT || 9793),
   apiKey: config.apiKey || process.env.STATS_API_KEY || "",
+  publicUrl:
+    config.publicUrl ||
+    process.env.STATS_API_PUBLIC_URL ||
+    "https://mundominecraft.wisp.uno",
   defaultGuildId:
     config.defaultGuildId || process.env.STATS_DEFAULT_GUILD_ID || process.env.GUILD_ID || "",
   rateLimitWindowMs: Number(
     config.rateLimitWindowMs || process.env.STATS_RATE_LIMIT_WINDOW_MS || 60000
   ),
   rateLimitMax: Number(config.rateLimitMax || process.env.STATS_RATE_LIMIT_MAX || 120),
-  corsOrigin: config.corsOrigin || process.env.STATS_API_CORS_ORIGIN || "",
+  corsOrigins: parseCorsOrigins(
+      config.corsOrigin ||
+      config.corsOrigins ||
+      process.env.STATS_API_CORS_ORIGIN ||
+      "https://mundominecraft.wisp.uno"
+  ),
 });
 
 const createStatsApp = (repository, config) => {
   const app = express();
 
   app.disable("x-powered-by");
+  app.set("trust proxy", 1);
   app.use(express.json({ limit: "32kb" }));
   app.use((req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
 
-    if (config.corsOrigin) {
-      res.setHeader("Access-Control-Allow-Origin", config.corsOrigin);
+    const requestOrigin = normalizeOrigin(req.get("origin"));
+    const allowedOrigin = config.corsOrigins.includes(requestOrigin)
+      ? requestOrigin
+      : config.corsOrigins[0];
+
+    if (allowedOrigin) {
+      res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
       res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, x-api-key");
@@ -255,8 +278,10 @@ const startStatsApi = (repository, config = {}) => {
   const app = createStatsApp(repository, apiConfig);
   const server = app.listen(apiConfig.port, apiConfig.host, () => {
     const baseUrl = `http://${apiConfig.host}:${apiConfig.port}`;
+    const publicUrl = normalizeOrigin(apiConfig.publicUrl);
     console.log(`[stats-api] Express listening on ${baseUrl}`);
     console.log(`[stats-api] Test URL: ${baseUrl}/api/health`);
+    console.log(`[stats-api] Public URL: ${publicUrl}/api/health`);
   });
 
   return server;

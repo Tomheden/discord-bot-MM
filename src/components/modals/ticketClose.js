@@ -16,9 +16,14 @@ module.exports = {
     if (!channel) {
       return;
     }
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferReply({ ephemeral: true });
+    }
 
-    const ticketUserId = channel.name.replace("ticket-", "");
-    const member = await interaction.guild.members.fetch(ticketUserId).catch(() => null);
+    const ticketUserId = extractTicketUserId(channel, interaction.guild?.id);
+    const member = ticketUserId
+      ? await interaction.guild.members.fetch(ticketUserId).catch(() => null)
+      : null;
     const reason = interaction.fields.getTextInputValue("closeReasonTicket");
 
     let transcriptResult = null;
@@ -74,15 +79,24 @@ module.exports = {
       await transcriptsChannel.send("Ticket transcript failed to generate.");
     }
 
-    if (ticketsLogChannel && member) {
+    if (ticketsLogChannel) {
+      const creatorLabel = member?.user
+        ? `${member.user}`
+        : ticketUserId
+          ? `<@${ticketUserId}>`
+          : "Usuario desconocido";
       const embed = new EmbedBuilder()
         .setColor("Blurple")
-        .setAuthor({
-          name: member.displayName,
-          iconURL: member.displayAvatarURL({ dynamic: true }),
-        })
+        .setAuthor(
+          member?.user
+            ? {
+                name: member.displayName,
+                iconURL: member.displayAvatarURL({ dynamic: true }),
+              }
+            : { name: "Ticket cerrado" }
+        )
         .setDescription(
-          `Ticket creado por ${member.user}\nCerrado por ${interaction.member.user} con motivo de: ${reason}`
+          `Ticket creado por ${creatorLabel}\nCerrado por ${interaction.member.user} con motivo de: ${reason}`
         )
         .setTimestamp();
 
@@ -92,17 +106,20 @@ module.exports = {
         fallbackUrl: transcriptMessage?.attachments.first()?.url,
       });
 
-      const button = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setLabel("Ver ticket")
-          .setURL(linkUrl)
-          .setStyle(ButtonStyle.Link)
-      );
-
-      await ticketsLogChannel.send({ embeds: [embed], components: [button] });
+      if (linkUrl) {
+        const button = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setLabel("Ver ticket")
+            .setURL(linkUrl)
+            .setStyle(ButtonStyle.Link)
+        );
+        await ticketsLogChannel.send({ embeds: [embed], components: [button] });
+      } else {
+        await ticketsLogChannel.send({ embeds: [embed] });
+      }
     }
 
-    await interaction.reply({ content: "Este ticket se cerrará en unos segundos..." });
+    await interaction.editReply({ content: "Este ticket se cerrará en unos segundos..." });
 
     setTimeout(async () => {
       await channel.delete().catch(() => {});
@@ -115,6 +132,24 @@ module.exports = {
       }
     }, 5000);
   },
+};
+
+const extractTicketUserId = (channel, guildId) => {
+  const topic = channel?.topic || "";
+  const match = topic.match(/UserId:\s*(\d{17,20})/);
+  if (match) {
+    return match[1];
+  }
+
+  const overwrites = channel?.permissionOverwrites?.cache;
+  if (!overwrites) {
+    return null;
+  }
+
+  const memberOverwrite = overwrites.find(
+    (overwrite) => overwrite.type === 1 && overwrite.id !== guildId
+  );
+  return memberOverwrite?.id ?? null;
 };
 
 const buildTextTranscript = async (channel) => {

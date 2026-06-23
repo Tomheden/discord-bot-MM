@@ -1,4 +1,4 @@
-﻿const {
+const {
   Events,
   EmbedBuilder,
   ActionRowBuilder,
@@ -11,6 +11,7 @@ const { YtDlpPlugin, download, json } = require("@distube/yt-dlp");
 const ffmpegStaticPath = require("ffmpeg-static");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 
 module.exports = {
   event: Events.ClientReady,
@@ -57,11 +58,20 @@ module.exports = {
     }
 
     const ffmpegPath = process.env.FFMPEG_PATH || ffmpegStaticPath;
+    let canChmodFfmpeg = false;
     try {
-      fs.chmodSync(ffmpegPath, 0o755);
-    } catch (error) {
-      if (voiceDebug) {
-        console.log(`[ffmpeg] chmod failed: ${error?.message || error}`);
+      fs.accessSync(ffmpegPath, fs.constants.W_OK);
+      canChmodFfmpeg = true;
+    } catch {
+      canChmodFfmpeg = false;
+    }
+    if (canChmodFfmpeg) {
+      try {
+        fs.chmodSync(ffmpegPath, 0o755);
+      } catch (error) {
+        if (voiceDebug) {
+          console.log(`[ffmpeg] chmod failed: ${error?.message || error}`);
+        }
       }
     }
     if (voiceDebug) {
@@ -82,6 +92,44 @@ module.exports = {
       },
       plugins: [new YtDlpPlugin({ update: false })],
     });
+    const applyFfmpegHeaders = (headersOrString) => {
+      if (!headersOrString) {
+        return;
+      }
+      let headerValue = "";
+      if (typeof headersOrString === "string") {
+        headerValue = headersOrString.trim();
+      } else if (typeof headersOrString === "object") {
+        const headerLines = Object.entries(headersOrString)
+          .filter(([, value]) => value != null && value !== "")
+          .map(([key, value]) => `${key}: ${value}`);
+        if (!headerLines.length) {
+          return;
+        }
+        headerValue = headerLines.join("\r\n");
+      } else {
+        return;
+      }
+      if (!headerValue) {
+        return;
+      }
+      if (!headerValue.endsWith("\r\n")) {
+        headerValue += "\r\n";
+      }
+      client.distube.options.ffmpeg.args =
+        client.distube.options.ffmpeg.args || {};
+      client.distube.options.ffmpeg.args.input =
+        client.distube.options.ffmpeg.args.input || {};
+      client.distube.options.ffmpeg.args.input.headers = headerValue;
+    };
+    if (process.env.FFMPEG_INPUT_HEADERS) {
+      applyFfmpegHeaders(process.env.FFMPEG_INPUT_HEADERS);
+    } else if (process.env.FFMPEG_USER_AGENT || process.env.FFMPEG_REFERER) {
+      applyFfmpegHeaders({
+        "User-Agent": process.env.FFMPEG_USER_AGENT,
+        Referer: process.env.FFMPEG_REFERER,
+      });
+    }
     const ytDlpDistPath = require.resolve("@distube/yt-dlp/dist/index.js");
     const ytDlpDir = path.join(path.dirname(ytDlpDistPath), "..", "bin");
     const ytDlpFilename = process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp";
@@ -95,39 +143,70 @@ module.exports = {
           console.error("[yt-dlp] descarga fallida:", error);
         });
     }
+    const getYtDlpCookiesPath = () => {
+      if (process.env.YTDLP_COOKIES_FILE) {
+        return process.env.YTDLP_COOKIES_FILE;
+      }
+      if (!process.env.YTDLP_COOKIES_BASE64) {
+        return null;
+      }
+      try {
+        const decoded = Buffer.from(
+          process.env.YTDLP_COOKIES_BASE64,
+          "base64"
+        ).toString("utf8");
+        const targetPath = path.join(
+          os.tmpdir(),
+          `yt-dlp-cookies-${process.pid}.txt`
+        );
+        fs.writeFileSync(targetPath, decoded, { encoding: "utf8", mode: 0o600 });
+        return targetPath;
+      } catch (error) {
+        console.error("[yt-dlp] no pude escribir cookies:", error);
+        return null;
+      }
+    };
+    const ytdlpCookiesPath = getYtDlpCookiesPath();
     const originalAttachStreamInfo =
       client.distube.handler.attachStreamInfo.bind(client.distube.handler);
     client.distube.handler.attachStreamInfo = async (song) => {
       if (song?.source === "youtube") {
-        const info = await json(song.url, {
-          dumpSingleJson: true,
-          noWarnings: true,
-          noCallHome: true,
-          preferFreeFormats: true,
-          skipDownload: true,
-          simulate: true,
-          format: "ba/ba*",
-        }).catch((error) => {
-          throw new DisTubeError(
-            "YTDLP_ERROR",
-            `${error?.stderr || error}`
-          );
-        });
-        if (info?.entries?.length) {
-          throw new DisTubeError(
-            "YTDLP_ERROR",
-            "No puedo obtener el stream de una playlist."
-          );
+        try {
+          const info = await json(song.url, {
+            dumpSingleJson: true,
+            noWarnings: true,
+            noCallHome: true,
+            preferFreeFormats: true,
+            skipDownload: true,
+            simulate: true,
+            format: "ba/ba*",
+            cookies: ytdlpCookiesPath || undefined,
+          });
+          if (info?.entries?.length) {
+            throw new DisTubeError(
+              "YTDLP_ERROR",
+              "No puedo obtener el stream de una playlist."
+            );
+          }
+          if (!info?.url) {
+            throw new DisTubeError(
+              "YTDLP_ERROR",
+              "No se pudo obtener el stream de esta cancion."
+            );
+          }
+          if (info?.http_headers) {
+            applyFfmpegHeaders(info.http_headers);
+          }
+          song.streamURL = info.url;
+          song.source = "direct_link";
+          return;
+        } catch (error) {
+          if (voiceDebug) {
+            console.log(
+              `[ytdlp] direct link fallido, usando stream nativo: ${error?.stderr || error}`
+            );
+          }
         }
-        if (!info?.url) {
-          throw new DisTubeError(
-            "YTDLP_ERROR",
-            "No se pudo obtener el stream de esta cancion."
-          );
-        }
-        song.streamURL = info.url;
-        song.source = "direct_link";
-        return;
       }
       await originalAttachStreamInfo(song);
     };

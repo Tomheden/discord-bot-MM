@@ -8,7 +8,7 @@ const {
   MessageFlags,
 } = require("discord.js");
 const config = require("../../config");
-const { loadJson } = require("../../utils/storage");
+const { loadJson, saveJson } = require("../../utils/storage");
 
 module.exports = {
   customId: "ticketModal",
@@ -57,18 +57,32 @@ module.exports = {
       });
     }
 
+    const ticketCounts = loadJson("ticket-counts.json", {});
+    const guildCounts = ticketCounts[interaction.guild.id] || {};
+    const currentCount = Number(guildCounts[interaction.user.id] || 0);
+    const nextCount = currentCount + 1;
+    const usernameSlug = interaction.user.username
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+    const safeName = usernameSlug || `user-${interaction.user.id}`;
+
     const channel = await interaction.guild.channels.create({
-      name: `ticket-${interaction.user.id}`,
+      name: `ticket-${safeName}-${nextCount}`,
       type: ChannelType.GuildText,
-      topic: `Ticket by ${interaction.user.username}; Reason: ${why}`,
+      topic: `Ticket de ${interaction.user.username}; ID de usuario: ${interaction.user.id}; Motivo: ${why}`,
       parent: category ?? undefined,
       permissionOverwrites: overwrites,
     });
+    guildCounts[interaction.user.id] = nextCount;
+    ticketCounts[interaction.guild.id] = guildCounts;
+    saveJson("ticket-counts.json", ticketCounts);
 
     const embed = new EmbedBuilder()
       .setColor("Blurple")
       .setTitle(`Ticket creado por ${interaction.user.username}`)
-      .setDescription(`Motivo: ${why}\n\nInformación adicional: ${info}`)
+      .setDescription(`**Motivo:** ${why}\n\n**Información adicional:** ${info}`)
       .setTimestamp();
 
     const button = new ActionRowBuilder().addComponents(

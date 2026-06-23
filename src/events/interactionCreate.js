@@ -3,7 +3,40 @@ const { Events, MessageFlags } = require("discord.js");
 module.exports = {
   event: Events.InteractionCreate,
   run: async (client, interaction) => {
+    if (client.stats && interaction.guild && !interaction.user?.bot) {
+      client.stats.enqueue("interaction", {
+        guildId: interaction.guild.id,
+        userId: interaction.user.id,
+        username: interaction.user.username,
+        joinedAt: interaction.member?.joinedAt || null,
+        channelId: interaction.channelId,
+        isCommand: interaction.isChatInputCommand(),
+        timestamp: new Date(),
+      });
+    }
+
     if (interaction.isChatInputCommand()) {
+      const command = client.commands.get(interaction.commandName);
+      if (!command) {
+        return;
+      }
+
+      try {
+        await command.run(client, interaction);
+      } catch (error) {
+        console.error(error);
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({
+            content: "Command failed.",
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+      }
+
+      return;
+    }
+
+    if (interaction.isUserContextMenuCommand()) {
       const command = client.commands.get(interaction.commandName);
       if (!command) {
         return;

@@ -4,5 +4,6 @@ package-lock.json
 # DO NOT REMOVE THESE FOR SECURITY
 src/config.js
 .env
+src/data/stats.json
 archive-2026-06-23T142655+0300.tar.gz
 src.zip

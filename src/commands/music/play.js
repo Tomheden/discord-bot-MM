@@ -114,7 +114,6 @@ module.exports = {
         const search = await json(`ytsearch1:${query}`, {
           dumpSingleJson: true,
           noWarnings: true,
-          noCallHome: true,
           preferFreeFormats: true,
           skipDownload: true,
           simulate: true,

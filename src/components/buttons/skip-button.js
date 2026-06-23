@@ -55,7 +55,9 @@ module.exports = {
       return;
     }
 
-    await interaction.deferUpdate();
-    queue.skip();
+    await interaction.update({
+      components: [buildDisabledControls(queue.paused)],
+    });
+    await queue.skip();
   },
 };

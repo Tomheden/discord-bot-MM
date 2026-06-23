@@ -7,7 +7,8 @@ const {
 } = require("discord.js");
 const { registerBirthdayCron } = require("../commands/utility/bday");
 const { DisTube, DisTubeError } = require("distube");
-const { YtDlpPlugin, download, json } = require("@distube/yt-dlp");
+const { download, json } = require("@distube/yt-dlp");
+const { LocalYtDlpPlugin } = require("../services/music/ytDlpExtractor");
 const ffmpegStaticPath = require("ffmpeg-static");
 const fs = require("fs");
 const path = require("path");
@@ -18,11 +19,8 @@ module.exports = {
   once: true,
   run: (client) => {
     console.log(`Logged in as ${client.user.tag}`);
-    const isMusicClient = client.mode === "music";
 
-    if (!isMusicClient) {
-      registerBirthdayCron(client);
-    }
+    registerBirthdayCron(client);
     const voiceDebug = process.env.VOICE_DEBUG === "1";
     if (voiceDebug) {
       client.ws.on("VOICE_SERVER_UPDATE", (payload) => {
@@ -81,16 +79,13 @@ module.exports = {
       );
     }
     client.distube = new DisTube(client, {
-      leaveOnStop: false,
-      leaveOnEmpty: false,
-      emptyCooldown: 20,
       emitNewSongOnly: true,
       emitAddSongWhenCreatingQueue: false,
       emitAddListWhenCreatingQueue: false,
       ffmpeg: {
         path: ffmpegPath,
       },
-      plugins: [new YtDlpPlugin({ update: false })],
+      plugins: [new LocalYtDlpPlugin()],
     });
     const applyFfmpegHeaders = (headersOrString) => {
       if (!headersOrString) {
@@ -130,7 +125,7 @@ module.exports = {
         Referer: process.env.FFMPEG_REFERER,
       });
     }
-    const ytDlpDistPath = require.resolve("@distube/yt-dlp/dist/index.js");
+    const ytDlpDistPath = require.resolve("@distube/yt-dlp");
     const ytDlpDir = path.join(path.dirname(ytDlpDistPath), "..", "bin");
     const ytDlpFilename = process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp";
     const ytDlpPath = path.join(ytDlpDir, ytDlpFilename);
@@ -175,7 +170,6 @@ module.exports = {
           const info = await json(song.url, {
             dumpSingleJson: true,
             noWarnings: true,
-            noCallHome: true,
             preferFreeFormats: true,
             skipDownload: true,
             simulate: true,
@@ -197,8 +191,9 @@ module.exports = {
           if (info?.http_headers) {
             applyFfmpegHeaders(info.http_headers);
           }
-          song.streamURL = info.url;
-          song.source = "direct_link";
+          song.stream = song.stream || { playFromSource: true };
+          song.stream.playFromSource = true;
+          song.stream.url = info.url;
           return;
         } catch (error) {
           if (voiceDebug) {
@@ -333,14 +328,14 @@ module.exports = {
           });
         queue.textChannel.send({ embeds: [embed] });
       })
-      .on("error", (channel, error) => {
-        if (channel) {
-          channel.send(
-            `? | Ha ocurrido un error: ${error.toString().slice(0, 1974)}`
-          );
-        } else {
-          console.error(error);
+      .on("error", (error, queue) => {
+        const message = `? | Ha ocurrido un error: ${error.toString().slice(0, 1974)}`;
+        if (queue?.textChannel) {
+          queue.textChannel.send(message);
+          return;
         }
+
+        console.error(error);
       })
       .on("ffmpegDebug", (debug) => {
         if (process.env.VOICE_DEBUG === "1") {
@@ -366,4 +361,3 @@ module.exports = {
 
   },
 };
-

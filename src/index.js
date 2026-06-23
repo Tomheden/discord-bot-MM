@@ -5,8 +5,10 @@ const config = require("./config");
 const { loadCommands } = require("./handlers/loadCommands");
 const { loadComponents } = require("./handlers/loadComponents");
 const { registerEvents } = require("./handlers/registerEvents");
+const { startStatsApi } = require("./api/statsApi");
+const { createStatsService } = require("./services/stats/statsService");
 
-const createClient = ({ name, token, allowedCategories, allowedEvents }) => {
+const createClient = ({ token, allowedEvents, statsService }) => {
   const client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
@@ -19,14 +21,14 @@ const createClient = ({ name, token, allowedCategories, allowedEvents }) => {
   });
 
   client.config = config;
-  client.mode = name;
+  client.stats = statsService || null;
 
-  loadCommands(client, { allowedCategories });
+  loadCommands(client);
   loadComponents(client);
   registerEvents(client, { allowedEvents });
 
   if (!token) {
-    console.error(`Missing ${name.toUpperCase()} token in environment.`);
+    console.error("Missing CLIENT_TOKEN in environment.");
     return null;
   }
 
@@ -39,25 +41,35 @@ if (!config.client.token) {
   process.exit(1);
 }
 
+const statsService = createStatsService(config);
+statsService.init();
+const statsApiServer = startStatsApi(statsService.repository, config.stats?.api || {});
+
+const shutdown = () => {
+  statsService.shutdown();
+
+  if (statsApiServer) {
+    statsApiServer.close(() => process.exit(0));
+    return;
+  }
+
+  process.exit(0);
+};
+
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
+
 createClient({
-  name: "main",
   token: config.client.token,
-  allowedCategories: null,
   allowedEvents: [
     Events.InteractionCreate,
+    Events.MessageCreate,
     Events.MessageDelete,
     Events.MessageUpdate,
+    Events.VoiceStateUpdate,
+    Events.GuildMemberAdd,
+    Events.GuildMemberRemove,
     Events.ClientReady,
   ],
+  statsService,
 });
-
-if (config.musicClient?.token) {
-  createClient({
-    name: "music",
-    token: config.musicClient.token,
-    allowedCategories: ["music"],
-    allowedEvents: [Events.InteractionCreate, Events.ClientReady],
-  });
-} else {
-  console.warn("MUSIC_TOKEN not set; music bot disabled.");
-}

@@ -698,11 +698,16 @@ class StatsRepository {
       return {
         guildId: user.guild_id,
         userId: user.user_id,
-      username: user.username,
-      minecraft: this.getMinecraftLink(user.guild_id, user.user_id),
-      messages: stats.messages,
+        username: user.username,
+        joinedAt: user.joined_at || null,
+        minecraft: this.getMinecraftLink(user.guild_id, user.user_id),
+        messages: stats.messages,
         voiceSeconds: stats.voiceSeconds,
         commands: stats.commands,
+        reactionsGiven: 0,
+        reactionsReceived: 0,
+        mentionsReceived: 0,
+        repliesSent: 0,
         activityScore,
       };
     });

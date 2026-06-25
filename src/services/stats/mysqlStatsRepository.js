@@ -1045,7 +1045,7 @@ class MySqlStatsRepository {
     const [rows] = await this.pool.execute(
       `SELECT
         u.guild_id, u.user_id, u.username, u.command_count,
-        u.minecraft_username, u.minecraft_uuid, u.minecraft_linked_at,
+        u.joined_at, u.minecraft_username, u.minecraft_uuid, u.minecraft_linked_at,
         COALESCE(m.total_messages, 0) AS messages,
         COALESCE(v.total_voice_seconds, 0) AS voice_seconds,
         COALESCE(s.reactions_given, 0) AS reactions_given,
@@ -1072,6 +1072,7 @@ class MySqlStatsRepository {
       guildId: row.guild_id,
       userId: row.user_id,
       username: row.username,
+      joinedAt: normalizeIso(row.joined_at),
       minecraft: row.minecraft_uuid
         ? {
             guild_id: row.guild_id,

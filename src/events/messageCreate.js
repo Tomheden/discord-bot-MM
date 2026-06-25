@@ -2,9 +2,19 @@ const { Events } = require("discord.js");
 
 module.exports = {
   event: Events.MessageCreate,
-  run: (client, message) => {
+  run: async (client, message) => {
     if (!client.stats || !message.guild || message.author?.bot) {
       return;
+    }
+
+    let replyUserId = message.mentions.repliedUser?.id || null;
+    if (!replyUserId && message.reference?.messageId) {
+      try {
+        const repliedMessage = await message.channel.messages.fetch(message.reference.messageId);
+        replyUserId = repliedMessage.author?.bot ? null : repliedMessage.author?.id || null;
+      } catch (error) {
+        replyUserId = null;
+      }
     }
 
     client.stats.enqueue("message", {
@@ -17,7 +27,7 @@ module.exports = {
         id: user.id,
         username: user.username,
       })),
-      replyUserId: message.mentions.repliedUser?.id || null,
+      replyUserId,
       timestamp: message.createdAt,
     });
   },

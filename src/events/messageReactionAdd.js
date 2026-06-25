@@ -16,7 +16,15 @@ module.exports = {
       }
     }
 
-    const message = fullReaction.message;
+    let message = fullReaction.message;
+    if (message?.partial) {
+      try {
+        message = await message.fetch();
+      } catch (error) {
+        return;
+      }
+    }
+
     if (!message?.guild || message.author?.bot) {
       return;
     }

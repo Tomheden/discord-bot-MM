@@ -13,6 +13,11 @@ module.exports = {
       username: message.author.username,
       joinedAt: message.member?.joinedAt,
       channelId: message.channelId,
+      mentionedUsers: [...message.mentions.users.values()].map((user) => ({
+        id: user.id,
+        username: user.username,
+      })),
+      replyUserId: message.mentions.repliedUser?.id || null,
       timestamp: message.createdAt,
     });
   },

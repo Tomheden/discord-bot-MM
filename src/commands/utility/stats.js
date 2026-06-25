@@ -26,11 +26,11 @@ module.exports = {
       return;
     }
 
-    client.stats.flush();
+    await client.stats.flush();
 
     const targetUser = interaction.options.getUser("usuario") || interaction.user;
     const isPrivate = interaction.options.getBoolean("privado") || false;
-    const embed = buildUserStatsEmbed({
+    const embed = await buildUserStatsEmbed({
       repository: client.stats.repository,
       guildId: interaction.guild.id,
       user: targetUser,

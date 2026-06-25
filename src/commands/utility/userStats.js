@@ -1,6 +1,8 @@
 const {
+  ApplicationIntegrationType,
   ApplicationCommandType,
   ContextMenuCommandBuilder,
+  InteractionContextType,
   MessageFlags,
 } = require("discord.js");
 const { buildUserStatsEmbed } = require("../../services/stats/statsDiscordPresenter");
@@ -8,7 +10,10 @@ const { buildUserStatsEmbed } = require("../../services/stats/statsDiscordPresen
 module.exports = {
   data: new ContextMenuCommandBuilder()
     .setName("Ver stats")
-    .setType(ApplicationCommandType.User),
+    .setType(ApplicationCommandType.User)
+    .setDMPermission(false)
+    .setIntegrationTypes(ApplicationIntegrationType.GuildInstall)
+    .setContexts(InteractionContextType.Guild),
   run: async (client, interaction) => {
     if (!client.stats || !interaction.guild) {
       await interaction.reply({
@@ -18,9 +23,9 @@ module.exports = {
       return;
     }
 
-    client.stats.flush();
+    await client.stats.flush();
 
-    const embed = buildUserStatsEmbed({
+    const embed = await buildUserStatsEmbed({
       repository: client.stats.repository,
       guildId: interaction.guild.id,
       user: interaction.targetUser,

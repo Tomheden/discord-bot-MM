@@ -3,7 +3,7 @@ const path = require("path");
 const { getDataPath } = require("../../utils/storage");
 
 // File-backed repository: owns the versioned stats schema and all read/write queries.
-const CURRENT_VERSION = 3;
+const CURRENT_VERSION = 4;
 const DEFAULT_FILE_NAME = "stats.json";
 
 const makeKey = (...parts) => parts.map((part) => String(part)).join(":");
@@ -29,6 +29,7 @@ const emptyStatsData = () => {
     voice_sessions: [],
     minecraft_links: {},
     refresh_runs: [],
+    member_sync_runs: [],
   };
 };
 
@@ -110,6 +111,16 @@ const normalizeData = (input) => {
       description: "Add scheduled stats refresh metadata",
     });
     data.version = 3;
+  }
+
+  if (data.version < 4) {
+    data.member_sync_runs = data.member_sync_runs || [];
+    data.migrations.push({
+      version: 4,
+      applied_at: new Date().toISOString(),
+      description: "Add full guild member sync metadata",
+    });
+    data.version = 4;
   }
 
   data.meta.updated_at = new Date().toISOString();
@@ -286,6 +297,56 @@ class StatsRepository {
     }
 
     user.left_at = toIsoString(timestamp);
+  }
+
+  syncGuildMember({ guildId, userId, username, joinedAt, timestamp }) {
+    if (!isSnowflake(guildId) || !isSnowflake(userId)) {
+      return null;
+    }
+
+    const now = toIsoString(timestamp);
+    const key = makeKey(guildId, userId);
+    const existing = this.data.users[key];
+
+    if (!existing) {
+      this.data.users[key] = {
+        guild_id: guildId,
+        user_id: userId,
+        username: username || null,
+        joined_at: joinedAt ? toIsoString(joinedAt) : null,
+        left_at: null,
+        first_activity_at: null,
+        last_activity_at: null,
+        command_count: 0,
+        minecraft_username: null,
+        minecraft_uuid: null,
+        minecraft_linked_at: null,
+        created_at: now,
+        updated_at: now,
+      };
+      return this.data.users[key];
+    }
+
+    if (username) {
+      existing.username = username;
+    }
+    if (joinedAt) {
+      existing.joined_at = toIsoString(joinedAt);
+    }
+    existing.left_at = null;
+    existing.updated_at = now;
+
+    return existing;
+  }
+
+  recordMemberSyncRun({ guildId, members, timestamp }) {
+    this.data.member_sync_runs.push({
+      guild_id: guildId,
+      members,
+      ran_at: toIsoString(timestamp),
+    });
+
+    this.data.member_sync_runs = this.data.member_sync_runs.slice(-100);
   }
 
   recordMessage({ guildId, userId, username, joinedAt, channelId, timestamp }) {

@@ -1,31 +1,8 @@
+const { ButtonInteraction, MessageFlags } = require("discord.js");
 const {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonInteraction,
-  ButtonStyle,
-  MessageFlags,
-} = require("discord.js");
-
-const buildControls = (paused) =>
-  new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("stopButton")
-      .setEmoji("<:stop:1199750571633152061>")
-      .setStyle(ButtonStyle.Danger),
-    paused
-      ? new ButtonBuilder()
-          .setCustomId("resumeButton")
-          .setEmoji("<:play:1199750566243483688>")
-          .setStyle(ButtonStyle.Success)
-      : new ButtonBuilder()
-          .setCustomId("pauseButton")
-          .setEmoji("<:pause:1199750570328719442>")
-          .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId("skipButton")
-      .setStyle(ButtonStyle.Primary)
-      .setEmoji("<:next:1199750568688746611>")
-  );
+  buildControls,
+  withLastAction,
+} = require("../../services/music/playerMessage");
 
 module.exports = {
   customId: "resumeButton",
@@ -44,8 +21,13 @@ module.exports = {
     }
 
     queue.resume();
+    const embed = withLastAction(
+      interaction.message,
+      `${interaction.user} ha reanudado la cancion`
+    );
     await interaction.update({
-      components: [buildControls(false)],
+      embeds: embed ? [embed] : undefined,
+      components: [buildControls({ paused: false })],
     });
   },
 };

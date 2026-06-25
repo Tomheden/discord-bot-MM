@@ -1,15 +1,13 @@
-const {
-  Events,
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-} = require("discord.js");
+const { Events, EmbedBuilder } = require("discord.js");
 const { registerBirthdayCron } = require("../commands/utility/bday");
-const { registerStatsRefreshCron } = require("../services/stats/statsRefreshScheduler");
+const {
+  registerStatsMemberSyncCron,
+  registerStatsRefreshCron,
+} = require("../services/stats/statsRefreshScheduler");
 const { DisTube, DisTubeError } = require("distube");
 const { download, json } = require("@distube/yt-dlp");
 const { LocalYtDlpPlugin } = require("../services/music/ytDlpExtractor");
+const { buildControls } = require("../services/music/playerMessage");
 const ffmpegStaticPath = require("ffmpeg-static");
 const fs = require("fs");
 const path = require("path");
@@ -23,6 +21,7 @@ module.exports = {
 
     registerBirthdayCron(client);
     registerStatsRefreshCron(client);
+    registerStatsMemberSyncCron(client);
     const voiceDebug = process.env.VOICE_DEBUG === "1";
     if (voiceDebug) {
       client.ws.on("VOICE_SERVER_UPDATE", (payload) => {
@@ -223,20 +222,6 @@ module.exports = {
 
     client.distube
       .on("playSong", (queue, song) => {
-        const controls = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId("stopButton")
-            .setEmoji("<:stop:1199750571633152061>")
-            .setStyle(ButtonStyle.Danger),
-          new ButtonBuilder()
-            .setCustomId("pauseButton")
-            .setEmoji("<:pause:1199750570328719442>")
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setCustomId("skipButton")
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji("<:next:1199750568688746611>")
-        );
         const embed = new EmbedBuilder()
           .setColor("Blurple")
           .setTitle("\uD83C\uDFA7 Ahora sonando:")
@@ -248,7 +233,7 @@ module.exports = {
           });
         nowPlayingMessage = queue.textChannel.send({
           embeds: [embed],
-          components: [controls],
+          components: [buildControls()],
         });
       })
       .on("finishSong", (queue) => {
@@ -261,43 +246,10 @@ module.exports = {
             if (!embedReceived) {
               return;
             }
-            const embed = new EmbedBuilder()
-              .setColor("e63535")
-              .setTitle(embedReceived.title ?? "\uD83C\uDFA7 Ahora sonando:")
-              .setThumbnail(embedReceived.thumbnail?.url ?? null)
-              .setDescription(embedReceived.description ?? "")
-              .setFooter({
-                text: embedReceived.footer?.text ?? "",
-                iconURL: embedReceived.footer?.iconURL ?? null,
-              });
-            let pauseOrResume = "pauseButton";
-            let buttonPauseOrResume = "<:pause:1199750570328719442>";
-            let buttonColor = ButtonStyle.Secondary;
-            if (queue.paused) {
-              pauseOrResume = "resumeButton";
-              buttonPauseOrResume = "<:play:1199750566243483688>";
-              buttonColor = ButtonStyle.Success;
-            }
-            const disabledControls = new ActionRowBuilder().addComponents(
-              new ButtonBuilder()
-                .setCustomId("stopButton")
-                .setEmoji("<:stop:1199750571633152061>")
-                .setStyle(ButtonStyle.Danger)
-                .setDisabled(true),
-              new ButtonBuilder()
-                .setCustomId(pauseOrResume)
-                .setEmoji(buttonPauseOrResume)
-                .setStyle(buttonColor)
-                .setDisabled(true),
-              new ButtonBuilder()
-                .setCustomId("skipButton")
-                .setStyle(ButtonStyle.Primary)
-                .setEmoji("<:next:1199750568688746611>")
-                .setDisabled(true)
-            );
+            const embed = EmbedBuilder.from(embedReceived).setColor("e63535");
             queue.textChannel.messages.edit(message, {
               embeds: [embed],
-              components: [disabledControls],
+              components: [buildControls({ paused: queue.paused, disabled: true })],
             });
           })
           .catch((error) => {

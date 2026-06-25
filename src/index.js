@@ -16,8 +16,9 @@ const createClient = ({ token, allowedEvents, statsService }) => {
       GatewayIntentBits.MessageContent,
       GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildVoiceStates,
+      GatewayIntentBits.GuildMessageReactions,
     ],
-    partials: [Partials.Channel, Partials.Message, Partials.User],
+    partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
   });
 
   client.config = config;
@@ -36,40 +37,48 @@ const createClient = ({ token, allowedEvents, statsService }) => {
   return client;
 };
 
-if (!config.client.token) {
-  console.error("Missing CLIENT_TOKEN in environment.");
-  process.exit(1);
-}
-
-const statsService = createStatsService(config);
-statsService.init();
-const statsApiServer = startStatsApi(statsService.repository, config.stats?.api || {});
-
-const shutdown = () => {
-  statsService.shutdown();
-
-  if (statsApiServer) {
-    statsApiServer.close(() => process.exit(0));
-    return;
+const main = async () => {
+  if (!config.client.token) {
+    console.error("Missing CLIENT_TOKEN in environment.");
+    process.exit(1);
   }
 
-  process.exit(0);
+  const statsService = createStatsService(config);
+  await statsService.init();
+  const statsApiServer = startStatsApi(statsService.repository, config.stats?.api || {});
+
+  const shutdown = async () => {
+    await statsService.shutdown();
+
+    if (statsApiServer) {
+      statsApiServer.close(() => process.exit(0));
+      return;
+    }
+
+    process.exit(0);
+  };
+
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+
+  createClient({
+    token: config.client.token,
+    allowedEvents: [
+      Events.InteractionCreate,
+      Events.MessageCreate,
+      Events.MessageDelete,
+      Events.MessageUpdate,
+      Events.MessageReactionAdd,
+      Events.VoiceStateUpdate,
+      Events.GuildMemberAdd,
+      Events.GuildMemberRemove,
+      Events.ClientReady,
+    ],
+    statsService,
+  });
 };
 
-process.once("SIGINT", shutdown);
-process.once("SIGTERM", shutdown);
-
-createClient({
-  token: config.client.token,
-  allowedEvents: [
-    Events.InteractionCreate,
-    Events.MessageCreate,
-    Events.MessageDelete,
-    Events.MessageUpdate,
-    Events.VoiceStateUpdate,
-    Events.GuildMemberAdd,
-    Events.GuildMemberRemove,
-    Events.ClientReady,
-  ],
-  statsService,
+main().catch((error) => {
+  console.error("[startup] Failed to start bot:", error);
+  process.exit(1);
 });

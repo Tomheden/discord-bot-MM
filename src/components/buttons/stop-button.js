@@ -1,35 +1,8 @@
+const { ButtonInteraction, MessageFlags } = require("discord.js");
 const {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonInteraction,
-  ButtonStyle,
-  MessageFlags,
-} = require("discord.js");
-
-const buildDisabledControls = (paused) =>
-  new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("stopButton")
-      .setEmoji("<:stop:1199750571633152061>")
-      .setStyle(ButtonStyle.Danger)
-      .setDisabled(true),
-    paused
-      ? new ButtonBuilder()
-          .setCustomId("resumeButton")
-          .setEmoji("<:play:1199750566243483688>")
-          .setStyle(ButtonStyle.Success)
-          .setDisabled(true)
-      : new ButtonBuilder()
-          .setCustomId("pauseButton")
-          .setEmoji("<:pause:1199750570328719442>")
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(true),
-    new ButtonBuilder()
-      .setCustomId("skipButton")
-      .setStyle(ButtonStyle.Primary)
-      .setEmoji("<:next:1199750568688746611>")
-      .setDisabled(true)
-  );
+  buildControls,
+  withLastAction,
+} = require("../../services/music/playerMessage");
 
 module.exports = {
   customId: "stopButton",
@@ -47,9 +20,14 @@ module.exports = {
       return;
     }
 
+    const embed = withLastAction(
+      interaction.message,
+      `${interaction.user} ha finalizado la reproduccion`
+    );
     queue.stop();
     await interaction.update({
-      components: [buildDisabledControls(queue.paused)],
+      embeds: embed ? [embed] : undefined,
+      components: [buildControls({ paused: queue.paused, disabled: true })],
     });
   },
 };

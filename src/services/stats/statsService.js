@@ -1,4 +1,8 @@
 const { StatsRepository } = require("./statsRepository");
+const {
+  MySqlStatsRepository,
+  shouldUseMySqlStats,
+} = require("./mysqlStatsRepository");
 
 // Buffered service: Discord events enqueue metadata here and disk writes happen in batches.
 class StatsService {
@@ -10,11 +14,13 @@ class StatsService {
     this.isFlushing = false;
   }
 
-  init() {
-    this.repository.init();
+  async init() {
+    await this.repository.init();
 
     this.flushTimer = setInterval(() => {
-      this.flush();
+      this.flush().catch((error) => {
+        console.error("[stats] Scheduled flush failed:", error);
+      });
     }, this.flushIntervalMs);
 
     if (this.flushTimer.unref) {
@@ -36,7 +42,7 @@ class StatsService {
     });
   }
 
-  flush() {
+  async flush() {
     if (this.isFlushing || this.queue.length === 0) {
       return;
     }
@@ -46,9 +52,9 @@ class StatsService {
 
     try {
       for (const event of events) {
-        this.applyEvent(event.type, event.payload);
+        await this.applyEvent(event.type, event.payload);
       }
-      this.repository.save();
+      await this.repository.save();
     } catch (error) {
       this.queue.unshift(...events);
       console.error("[stats] Flush failed:", error);
@@ -57,16 +63,19 @@ class StatsService {
     }
   }
 
-  shutdown() {
+  async shutdown() {
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
     }
 
-    this.flush();
+    await this.flush();
+    if (this.repository.close) {
+      await this.repository.close();
+    }
   }
 
-  applyEvent(type, payload) {
+  async applyEvent(type, payload) {
     const handlers = {
       message: () => this.repository.recordMessage(payload),
       interaction: () => this.repository.recordInteraction(payload),
@@ -74,10 +83,11 @@ class StatsService {
       memberLeave: () => this.repository.recordMemberLeave(payload),
       voiceJoin: () => this.repository.recordVoiceJoin(payload),
       voiceLeave: () => this.repository.recordVoiceLeave(payload),
+      reaction: () => this.repository.recordReaction?.(payload),
     };
 
     if (handlers[type]) {
-      handlers[type]();
+      await handlers[type]();
     }
   }
 }
@@ -85,8 +95,14 @@ class StatsService {
 const createStatsService = (config = {}) => {
   const statsConfig = config.stats || {};
 
+  const repository = shouldUseMySqlStats(statsConfig)
+    ? new MySqlStatsRepository(statsConfig.database || {})
+    : new StatsRepository({
+        fileName: statsConfig.dataFile || process.env.STATS_DATA_FILE || "stats.json",
+      });
+
   return new StatsService({
-    fileName: statsConfig.dataFile || process.env.STATS_DATA_FILE || "stats.json",
+    repository,
     flushIntervalMs: Number(
       statsConfig.flushIntervalMs || process.env.STATS_FLUSH_INTERVAL_MS || 30000
     ),

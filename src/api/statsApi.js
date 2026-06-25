@@ -38,7 +38,11 @@ const createRateLimiter = ({ windowMs, max }) => {
   };
 };
 
-const resolveGuildId = (req, repository, config) => {
+const asyncRoute = (handler) => (req, res, next) => {
+  Promise.resolve(handler(req, res, next)).catch(next);
+};
+
+const resolveGuildId = async (req, repository, config) => {
   const queryGuildId = req.query.guildId;
   if (queryGuildId) {
     return isSnowflake(queryGuildId) ? queryGuildId : null;
@@ -48,7 +52,7 @@ const resolveGuildId = (req, repository, config) => {
     return config.defaultGuildId;
   }
 
-  const guildIds = repository.getGuildIds();
+  const guildIds = await repository.getGuildIds();
   return guildIds.length === 1 ? guildIds[0] : null;
 };
 
@@ -86,6 +90,130 @@ const normalizeApiConfig = (config = {}) => ({
       process.env.STATS_API_CORS_ORIGIN ||
       "https://mundominecraft.wisp.uno"
   ),
+});
+
+const normalizeMinecraftLink = (link) => {
+  if (!link) {
+    return null;
+  }
+
+  const username = link.minecraftUsername || link.minecraft_username;
+  const uuid = link.minecraftUuid || link.minecraft_uuid;
+
+  if (!username && !uuid) {
+    return null;
+  }
+
+  return {
+    username: username || null,
+    uuid: uuid || null,
+    linkedAt: link.linkedAt || link.linked_at || null,
+  };
+};
+
+const buildProfile = ({ guildId, userId, username, joinedAt, minecraft }, link = null) => {
+  const normalizedLink = normalizeMinecraftLink(minecraft || link);
+  const rawLink = minecraft || link || {};
+
+  return {
+    guildId: guildId || rawLink.guildId || rawLink.guild_id || null,
+    userId: userId || rawLink.userId || rawLink.user_id || null,
+    username: username || rawLink.discordUsername || rawLink.discord_username || null,
+    joinedAt: joinedAt || null,
+    minecraft: normalizedLink,
+  };
+};
+
+const stripUserIdentity = (payload = {}) => {
+  const { guildId, userId, username, minecraft, joinedAt, ...rest } = payload;
+  return rest;
+};
+
+const formatDailyActivity = (entry) => ({
+  date: entry.date,
+  messages: entry.messages || 0,
+  voiceSeconds: entry.voiceSeconds ?? entry.voice_seconds ?? 0,
+  commands: entry.commands || 0,
+  reactionsGiven: entry.reactionsGiven ?? entry.reactions_given ?? 0,
+  reactionsReceived: entry.reactionsReceived ?? entry.reactions_received ?? 0,
+  mentionsReceived: entry.mentionsReceived ?? entry.mentions_received ?? 0,
+  repliesSent: entry.repliesSent ?? entry.replies_sent ?? 0,
+});
+
+const formatHourlyActivity = (entry) => ({
+  date: entry.date,
+  hour: entry.hour,
+  messages: entry.messages || 0,
+  interactions: entry.interactions || 0,
+});
+
+const formatUserStatsResponse = (stats, link = null) => ({
+  profile: buildProfile(stats, link),
+  stats: stripUserIdentity(stats),
+});
+
+const formatUserActivityResponse = (activity, profileSource = {}) => {
+  const cleanActivity = stripUserIdentity(activity);
+
+  return {
+    profile: buildProfile({
+      ...profileSource,
+      guildId: profileSource.guildId || activity.guildId,
+      userId: profileSource.userId || activity.userId,
+      joinedAt: profileSource.joinedAt || activity.joinedAt,
+    }),
+    activity: {
+      ...cleanActivity,
+      daily: (cleanActivity.daily || []).map(formatDailyActivity),
+      hourly: (cleanActivity.hourly || []).map(formatHourlyActivity),
+    },
+  };
+};
+
+const formatMessageChannel = (entry) => ({
+  channelId: entry.channelId || entry.channel_id,
+  messages: entry.messages ?? entry.total_messages ?? 0,
+});
+
+const formatVoiceChannel = (entry) => ({
+  channelId: entry.channelId || entry.channel_id,
+  voiceSeconds: entry.voiceSeconds ?? entry.total_voice_seconds ?? 0,
+  sessions: entry.sessions ?? entry.total_sessions ?? 0,
+});
+
+const formatVoiceSession = (entry) => ({
+  channelId: entry.channelId || entry.channel_id,
+  joinedAt: entry.joinedAt || entry.joined_at || null,
+  leftAt: entry.leftAt || entry.left_at || null,
+  durationSeconds: entry.durationSeconds ?? entry.duration_seconds ?? 0,
+});
+
+const formatUserHistoryResponse = (history, profileSource = {}) => ({
+  profile: buildProfile({
+    ...profileSource,
+    guildId: profileSource.guildId || history.guildId,
+    userId: profileSource.userId || history.userId,
+  }),
+  history: {
+    daily: (history.daily || []).map(formatDailyActivity),
+    messageChannels: (history.messageChannels || []).map(formatMessageChannel),
+    voiceChannels: (history.voiceChannels || []).map(formatVoiceChannel),
+    voiceSessions: (history.voiceSessions || []).map(formatVoiceSession),
+  },
+});
+
+const formatRankingEntry = (entry) => {
+  const { rank, guildId, userId, username, minecraft, ...metrics } = entry;
+
+  return {
+    rank,
+    profile: buildProfile({ guildId, userId, username, minecraft }),
+    metrics,
+  };
+};
+
+const formatLinkResponse = (link, source = {}) => ({
+  profile: buildProfile(source, link),
 });
 
 const createStatsApp = (repository, config) => {
@@ -135,56 +263,66 @@ const createStatsApp = (repository, config) => {
     res.json({ ok: true });
   });
 
-  app.get("/api/users/:userId/stats", (req, res) => {
-    const guildId = resolveGuildId(req, repository, config);
+  app.get("/api/users/:userId/stats", asyncRoute(async (req, res) => {
+    const guildId = await resolveGuildId(req, repository, config);
     if (!isSnowflake(req.params.userId) || !guildId) {
-      res.status(400).json({ error: "Valid userId and guildId are required" });
+      res.status(400).json({ error: "Valid userId and configured guild are required" });
       return;
     }
 
-    res.json(repository.getUserStats(guildId, req.params.userId));
-  });
+    const stats = await repository.getUserStats(guildId, req.params.userId);
+    res.json(formatUserStatsResponse(stats));
+  }));
 
-  app.get("/api/users/:userId/activity", (req, res) => {
-    const guildId = resolveGuildId(req, repository, config);
+  app.get("/api/users/:userId/activity", asyncRoute(async (req, res) => {
+    const guildId = await resolveGuildId(req, repository, config);
     if (!isSnowflake(req.params.userId) || !guildId) {
-      res.status(400).json({ error: "Valid userId and guildId are required" });
+      res.status(400).json({ error: "Valid userId and configured guild are required" });
       return;
     }
 
-    res.json(repository.getUserActivity(guildId, req.params.userId));
-  });
+    const [stats, activity] = await Promise.all([
+      repository.getUserStats(guildId, req.params.userId),
+      repository.getUserActivity(guildId, req.params.userId),
+    ]);
+    res.json(formatUserActivityResponse(activity, stats));
+  }));
 
-  app.get("/api/users/:userId/history", (req, res) => {
-    const guildId = resolveGuildId(req, repository, config);
+  app.get("/api/users/:userId/history", asyncRoute(async (req, res) => {
+    const guildId = await resolveGuildId(req, repository, config);
     if (!isSnowflake(req.params.userId) || !guildId) {
-      res.status(400).json({ error: "Valid userId and guildId are required" });
+      res.status(400).json({ error: "Valid userId and configured guild are required" });
       return;
     }
 
-    res.json(repository.getUserHistory(guildId, req.params.userId));
-  });
+    const [stats, history] = await Promise.all([
+      repository.getUserStats(guildId, req.params.userId),
+      repository.getUserHistory(guildId, req.params.userId),
+    ]);
+    res.json(formatUserHistoryResponse(history, stats));
+  }));
 
-  app.get("/api/users/:userId/link", (req, res) => {
-    const guildId = resolveGuildId(req, repository, config);
+  app.get("/api/users/:userId/link", asyncRoute(async (req, res) => {
+    const guildId = await resolveGuildId(req, repository, config);
     if (!isSnowflake(req.params.userId) || !guildId) {
-      res.status(400).json({ error: "Valid userId and guildId are required" });
+      res.status(400).json({ error: "Valid userId and configured guild are required" });
       return;
     }
 
-    res.json({
-      guildId,
-      userId: req.params.userId,
-      minecraft: repository.getMinecraftLink(guildId, req.params.userId),
-    });
-  });
+    res.json(
+      formatLinkResponse(await repository.getMinecraftLink(guildId, req.params.userId), {
+        guildId,
+        userId: req.params.userId,
+      })
+    );
+  }));
 
-  app.get("/api/minecraft/:minecraftId/:view", (req, res) => {
+  app.get("/api/minecraft/:minecraftId/:view", asyncRoute(async (req, res) => {
     const { minecraftId, view } = req.params;
-    const guildId = resolveGuildId(req, repository, config);
+    const guildId = await resolveGuildId(req, repository, config);
 
     if (!isMinecraftId(minecraftId) || !guildId) {
-      res.status(400).json({ error: "Valid minecraftId and guildId are required" });
+      res.status(400).json({ error: "Valid minecraftId and configured guild are required" });
       return;
     }
 
@@ -193,68 +331,116 @@ const createStatsApp = (repository, config) => {
       return;
     }
 
-    const link = repository.findMinecraftLink(guildId, minecraftId);
+    const link = await repository.findMinecraftLink(guildId, minecraftId);
     if (!link) {
       res.status(404).json({ error: "Minecraft account is not linked" });
       return;
     }
 
     if (view === "stats") {
-      res.json({
-        minecraft: link,
-        stats: repository.getUserStats(guildId, link.user_id),
-      });
+      const stats = await repository.getUserStats(guildId, link.user_id);
+      res.json(formatUserStatsResponse(stats, link));
       return;
     }
 
     if (view === "activity") {
-      res.json({
-        minecraft: link,
-        activity: repository.getUserActivity(guildId, link.user_id),
-      });
+      const [stats, activity] = await Promise.all([
+        repository.getUserStats(guildId, link.user_id),
+        repository.getUserActivity(guildId, link.user_id),
+      ]);
+      res.json(formatUserActivityResponse(activity, { ...stats, minecraft: link }));
       return;
     }
 
     if (view === "history") {
-      res.json({
-        minecraft: link,
-        history: repository.getUserHistory(guildId, link.user_id),
-      });
+      const [stats, history] = await Promise.all([
+        repository.getUserStats(guildId, link.user_id),
+        repository.getUserHistory(guildId, link.user_id),
+      ]);
+      res.json(formatUserHistoryResponse(history, { ...stats, minecraft: link }));
       return;
     }
 
-    res.json(link);
-  });
+    res.json(formatLinkResponse(link));
+  }));
 
-  app.get("/api/rankings/:type", (req, res) => {
+  app.get("/api/rankings/:type", asyncRoute(async (req, res) => {
     const { type } = req.params;
-    const guildId = resolveGuildId(req, repository, config);
+    const guildId = await resolveGuildId(req, repository, config);
     const period = req.query.period || "all";
+    const limit = Number(req.query.limit || 100);
 
-    if (!["messages", "voice", "activity"].includes(type)) {
+    if (type === "channels") {
+      if (!guildId) {
+        res.status(400).json({ error: "Configured guild is required" });
+        return;
+      }
+      if (!["all", "day", "week", "month"].includes(period)) {
+        res.status(400).json({ error: "Valid period is required" });
+        return;
+      }
+
+      res.json(await repository.getGuildChannels(guildId, { period, limit }));
+      return;
+    }
+
+    if (
+      !["messages", "voice", "activity", "commands", "reactions", "mentions", "replies"].includes(
+        type
+      )
+    ) {
       res.status(404).json({ error: "Unknown ranking" });
       return;
     }
-    if (guildId && !isSnowflake(guildId)) {
-      res.status(400).json({ error: "Valid guildId is required" });
+    if (!guildId) {
+      res.status(400).json({ error: "Configured guild is required" });
       return;
     }
-    if (!["all", "week", "month"].includes(period)) {
+    if (!["all", "day", "week", "month"].includes(period)) {
       res.status(400).json({ error: "Valid period is required" });
       return;
     }
 
-    res.json(repository.getRanking(type, { guildId, period }).slice(0, 100));
-  });
+    const normalizedLimit = Math.min(Math.max(Number.isInteger(limit) ? limit : 100, 1), 500);
+    const ranking = await repository.getRanking(type, { guildId, period });
+    res.json(ranking.slice(0, normalizedLimit).map(formatRankingEntry));
+  }));
 
-  app.get("/api/guilds/:guildId/stats", (req, res) => {
+  app.get("/api/rankings/channels", asyncRoute(async (req, res) => {
+    const guildId = await resolveGuildId(req, repository, config);
+    const period = req.query.period || "all";
+    const limit = Number(req.query.limit || 10);
+
+    if (!guildId) {
+      res.status(400).json({ error: "Configured guild is required" });
+      return;
+    }
+    if (!["all", "day", "week", "month"].includes(period)) {
+      res.status(400).json({ error: "Valid period is required" });
+      return;
+    }
+
+    res.json(await repository.getGuildChannels(guildId, { period, limit }));
+  }));
+
+  app.get("/api/guilds/:guildId/stats", asyncRoute(async (req, res) => {
     if (!isSnowflake(req.params.guildId)) {
       res.status(400).json({ error: "Valid guildId is required" });
       return;
     }
 
-    res.json(repository.getGuildStats(req.params.guildId));
-  });
+    res.json(await repository.getGuildStats(req.params.guildId));
+  }));
+
+  app.get("/api/guild/stats", asyncRoute(async (req, res) => {
+    const guildId = await resolveGuildId(req, repository, config);
+    if (!guildId) {
+      res.status(400).json({ error: "Configured guild is required" });
+      return;
+    }
+
+    res.json(await repository.getGuildStats(guildId));
+  }));
 
   app.use((req, res) => {
     res.status(404).json({ error: "Not found" });

@@ -20,6 +20,8 @@ const formatDate = (iso) => {
   return `<t:${Math.floor(new Date(iso).getTime() / 1000)}:R>`;
 };
 
+const formatNumber = (value) => String(Number(value) || 0);
+
 const formatTopChannels = (channels) => {
   if (!channels.length) {
     return "Sin datos";
@@ -41,12 +43,18 @@ const formatTopChannels = (channels) => {
     .join("\n");
 };
 
-const buildUserStatsEmbed = ({ repository, guildId, user }) => {
-  const stats = repository.getUserStats(guildId, user.id);
-  const activity = repository.getUserActivity(guildId, user.id);
-  const minecraft = stats.minecraft
-    ? `**${stats.minecraft.minecraft_username}**`
-    : "Sin vincular";
+const getMinecraftUsername = (minecraft) =>
+  minecraft?.minecraft_username || minecraft?.username || null;
+
+const buildUserStatsEmbed = async ({ repository, guildId, user }) => {
+  const stats = await repository.getUserStats(guildId, user.id);
+  const activity = await repository.getUserActivity(guildId, user.id);
+  const minecraftUsername = getMinecraftUsername(stats.minecraft);
+  const minecraft = minecraftUsername ? `**${minecraftUsername}**` : "Sin vincular";
+  const reactionsGiven = Number(stats.reactionsGiven) || 0;
+  const reactionsReceived = Number(stats.reactionsReceived) || 0;
+  const mentionsReceived = Number(stats.mentionsReceived) || 0;
+  const repliesSent = Number(stats.repliesSent) || 0;
 
   return new EmbedBuilder()
     .setColor("Blurple")
@@ -77,17 +85,28 @@ const buildUserStatsEmbed = ({ repository, guildId, user }) => {
         name: "Actividad",
         value: [
           `Minecraft: ${minecraft}`,
-          `Comandos: **${stats.commands}**`,
-          `Dias activos: **${activity.daysActive}**`,
+          `Comandos: **${formatNumber(stats.commands)}**`,
+          `Dias activos: **${formatNumber(activity.daysActive)}**`,
+          `Racha activa: **${formatNumber(activity.activeStreak)}**`,
           `Ultima actividad: ${formatDate(activity.lastActivityAt)}`,
           `Union al servidor: ${formatDate(activity.joinedAt)}`,
         ].join("\n"),
         inline: false,
       },
       {
+        name: "Social",
+        value: [
+          `Reacciones dadas: **${formatNumber(reactionsGiven)}**`,
+          `Reacciones recibidas: **${formatNumber(reactionsReceived)}**`,
+          `Menciones recibidas: **${formatNumber(mentionsReceived)}**`,
+          `Respuestas enviadas: **${formatNumber(repliesSent)}**`,
+        ].join("\n"),
+        inline: true,
+      },
+      {
         name: "Canales mas usados",
         value: formatTopChannels(activity.topChannels),
-        inline: false,
+        inline: true,
       }
     )
     .setFooter({ text: "Solo se registran metadatos, no contenido de mensajes." });
@@ -95,4 +114,5 @@ const buildUserStatsEmbed = ({ repository, guildId, user }) => {
 
 module.exports = {
   buildUserStatsEmbed,
+  formatDuration,
 };

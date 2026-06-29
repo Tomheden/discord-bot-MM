@@ -148,12 +148,18 @@ Endpoints:
 - `GET /api/rankings/reactions`
 - `GET /api/rankings/mentions`
 - `GET /api/rankings/replies`
-- `GET /api/rankings/channels?period=day|week|month|all&limit=10`
+- `GET /api/rankings/channels?period=day|week|month|all&limit=10&visibility=public|private|all`
 - `GET /api/guilds/:guildId/stats`
 - `GET /api/guild/stats`
 
 User, Minecraft and ranking endpoints also accept `?guildId=:guildId`. You can omit
 it when `STATS_DEFAULT_GUILD_ID` is set or the stats storage contains one guild.
+Ranking periods are calendar-based: `day` means today, `week` starts on Monday,
+and `month` starts on the first day of the month.
+Channel rankings include `channelId`, `channelName` and `channelType` after channel
+metadata has been synced. They show public channels by default and exclude
+`1051954336231587840`; add more excluded channel IDs with `STATS_EXCLUDED_CHANNEL_IDS`
+as a comma-separated env var.
 
 User and Minecraft endpoints return identity data once under `profile` and metrics under
 `stats`, `activity` or `history`. Example:

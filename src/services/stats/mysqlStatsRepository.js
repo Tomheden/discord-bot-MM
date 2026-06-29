@@ -62,23 +62,75 @@ const normalizeLimit = (value, fallback = 10, max = 500) => {
   return Math.min(parsed, max);
 };
 
-const normalizePeriod = (period) => {
+const normalizePeriod = (period, now = new Date()) => {
   if (!period || period === "all") {
     return null;
   }
 
-  const date = new Date();
+  const date = toDate(now);
+  const start = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+  );
+
   if (period === "day") {
-    date.setUTCDate(date.getUTCDate() - 1);
+    return start.toISOString().slice(0, 10);
   } else if (period === "week") {
-    date.setUTCDate(date.getUTCDate() - 7);
+    const mondayOffset = (start.getUTCDay() + 6) % 7;
+    start.setUTCDate(start.getUTCDate() - mondayOffset);
   } else if (period === "month") {
-    date.setUTCDate(date.getUTCDate() - 30);
+    start.setUTCDate(1);
   } else {
     return null;
   }
 
-  return date.toISOString().slice(0, 10);
+  return start.toISOString().slice(0, 10);
+};
+
+const CHANNEL_TYPE_NAMES = {
+  0: "GuildText",
+  2: "GuildVoice",
+  4: "GuildCategory",
+  5: "GuildAnnouncement",
+  10: "AnnouncementThread",
+  11: "PublicThread",
+  12: "PrivateThread",
+  13: "GuildStageVoice",
+  14: "GuildDirectory",
+  15: "GuildForum",
+  16: "GuildMedia",
+};
+
+const normalizeChannelType = (type) => {
+  if (type === null || type === undefined) {
+    return null;
+  }
+
+  return CHANNEL_TYPE_NAMES[type] || String(type);
+};
+
+const DEFAULT_EXCLUDED_CHANNEL_IDS = ["1051954336231587840"];
+
+const getExcludedChannelIds = (extra = []) => [
+  ...new Set([
+    ...DEFAULT_EXCLUDED_CHANNEL_IDS,
+    ...String(process.env.STATS_EXCLUDED_CHANNEL_IDS || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+    ...extra,
+  ]),
+];
+
+const getChannelVisibilityFilter = (visibility) => {
+  if (visibility === "all") {
+    return "";
+  }
+
+  if (visibility === "private") {
+    return "AND COALESCE(dc.is_public, 1) = 0";
+  }
+
+  return "AND COALESCE(dc.is_public, 1) = 1";
 };
 
 const parseDatabaseUrl = (databaseUrl) => {
@@ -300,6 +352,17 @@ class MySqlStatsRepository {
         PRIMARY KEY (guild_id, channel_id, date),
         KEY idx_channel_daily_guild_date (guild_id, date)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+      `CREATE TABLE IF NOT EXISTS discord_channels (
+        guild_id VARCHAR(25) NOT NULL,
+        channel_id VARCHAR(25) NOT NULL,
+        name VARCHAR(100) NULL,
+        type VARCHAR(50) NULL,
+        parent_id VARCHAR(25) NULL,
+        is_public TINYINT(1) NOT NULL DEFAULT 1,
+        updated_at DATETIME(3) NOT NULL,
+        PRIMARY KEY (guild_id, channel_id),
+        KEY idx_discord_channels_guild_type (guild_id, type)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
       `CREATE TABLE IF NOT EXISTS social_stats (
         guild_id VARCHAR(25) NOT NULL,
         user_id VARCHAR(25) NOT NULL,
@@ -340,6 +403,28 @@ class MySqlStatsRepository {
 
     for (const statement of statements) {
       await this.pool.execute(statement);
+    }
+
+    await this.ensureColumn(
+      "discord_channels",
+      "is_public",
+      "TINYINT(1) NOT NULL DEFAULT 1 AFTER parent_id"
+    );
+  }
+
+  async ensureColumn(tableName, columnName, definition) {
+    const [columns] = await this.pool.execute(
+      `SELECT COLUMN_NAME
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = ?
+         AND COLUMN_NAME = ?
+       LIMIT 1`,
+      [tableName, columnName]
+    );
+
+    if (columns.length === 0) {
+      await this.pool.execute(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
     }
   }
 
@@ -413,6 +498,34 @@ class MySqlStatsRepository {
     return rows[0] || null;
   }
 
+  async syncGuildChannel({ guildId, channelId, name, type, parentId, isPublic, timestamp }) {
+    if (!isSnowflake(guildId) || !isSnowflake(channelId)) {
+      return;
+    }
+
+    const now = normalizeDateTime(timestamp || new Date());
+    await this.pool.execute(
+      `INSERT INTO discord_channels (
+        guild_id, channel_id, name, type, parent_id, is_public, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         name = VALUES(name),
+         type = VALUES(type),
+         parent_id = VALUES(parent_id),
+         is_public = VALUES(is_public),
+         updated_at = VALUES(updated_at)`,
+      [
+        guildId,
+        channelId,
+        name || null,
+        normalizeChannelType(type),
+        parentId || null,
+        isPublic === false ? 0 : 1,
+        now,
+      ]
+    );
+  }
+
   async recordMemberJoin({ guildId, userId, username, joinedAt, timestamp }) {
     await this.ensureUser({ guildId, userId, username, joinedAt, timestamp });
 
@@ -449,6 +562,10 @@ class MySqlStatsRepository {
     username,
     joinedAt,
     channelId,
+    channelName,
+    channelType,
+    channelParentId,
+    channelIsPublic,
     timestamp,
     mentionedUsers = [],
     replyUserId,
@@ -461,6 +578,15 @@ class MySqlStatsRepository {
     const date = getDateKey(now);
     const hour = getHourKey(now);
 
+    await this.syncGuildChannel({
+      guildId,
+      channelId,
+      name: channelName,
+      type: channelType,
+      parentId: channelParentId,
+      isPublic: channelIsPublic,
+      timestamp: now,
+    });
     await this.ensureUser({ guildId, userId, username, joinedAt, timestamp: now });
     await this.pool.execute(
       `INSERT INTO message_stats (guild_id, user_id, total_messages, first_message_at, last_message_at)
@@ -531,6 +657,10 @@ class MySqlStatsRepository {
     username,
     joinedAt,
     channelId,
+    channelName,
+    channelType,
+    channelParentId,
+    channelIsPublic,
     messageAuthorId,
     timestamp,
   }) {
@@ -541,6 +671,15 @@ class MySqlStatsRepository {
     const now = normalizeDateTime(timestamp);
     const date = getDateKey(now);
 
+    await this.syncGuildChannel({
+      guildId,
+      channelId,
+      name: channelName,
+      type: channelType,
+      parentId: channelParentId,
+      isPublic: channelIsPublic,
+      timestamp: now,
+    });
     await this.ensureUser({ guildId, userId, username, joinedAt, timestamp: now });
     await this.incrementSocial(guildId, userId, { reactions_given: 1 }, now);
     await this.incrementDaily(guildId, userId, date, { reactions_given: 1 });
@@ -569,12 +708,32 @@ class MySqlStatsRepository {
     );
   }
 
-  async recordVoiceJoin({ guildId, userId, username, joinedAt, channelId, timestamp }) {
+  async recordVoiceJoin({
+    guildId,
+    userId,
+    username,
+    joinedAt,
+    channelId,
+    channelName,
+    channelType,
+    channelParentId,
+    channelIsPublic,
+    timestamp,
+  }) {
     if (!isSnowflake(channelId)) {
       return;
     }
 
     const now = normalizeDateTime(timestamp);
+    await this.syncGuildChannel({
+      guildId,
+      channelId,
+      name: channelName,
+      type: channelType,
+      parentId: channelParentId,
+      isPublic: channelIsPublic,
+      timestamp: now,
+    });
     await this.ensureUser({ guildId, userId, username, joinedAt, timestamp: now });
     await this.pool.execute(
       `INSERT INTO voice_stats (
@@ -598,12 +757,32 @@ class MySqlStatsRepository {
     );
   }
 
-  async recordVoiceLeave({ guildId, userId, username, joinedAt, channelId, timestamp }) {
+  async recordVoiceLeave({
+    guildId,
+    userId,
+    username,
+    joinedAt,
+    channelId,
+    channelName,
+    channelType,
+    channelParentId,
+    channelIsPublic,
+    timestamp,
+  }) {
     if (!isSnowflake(channelId)) {
       return;
     }
 
     const now = normalizeDateTime(timestamp);
+    await this.syncGuildChannel({
+      guildId,
+      channelId,
+      name: channelName,
+      type: channelType,
+      parentId: channelParentId,
+      isPublic: channelIsPublic,
+      timestamp: now,
+    });
     await this.ensureUser({ guildId, userId, username, joinedAt, timestamp: now });
 
     const [rows] = await this.pool.execute(
@@ -987,17 +1166,20 @@ class MySqlStatsRepository {
 
   async getUserHistory(guildId, userId) {
     const [messageChannels] = await this.pool.execute(
-      `SELECT channel_id, total_messages
-       FROM message_channel_stats
-       WHERE guild_id = ? AND user_id = ?
-       ORDER BY total_messages DESC`,
+      `SELECT m.channel_id, dc.name AS channel_name, dc.type AS channel_type, m.total_messages
+       FROM message_channel_stats m
+       LEFT JOIN discord_channels dc ON dc.guild_id = m.guild_id AND dc.channel_id = m.channel_id
+       WHERE m.guild_id = ? AND m.user_id = ?
+       ORDER BY m.total_messages DESC`,
       [guildId, userId]
     );
     const [voiceChannels] = await this.pool.execute(
-      `SELECT channel_id, total_voice_seconds, total_sessions
-       FROM voice_channel_stats
-       WHERE guild_id = ? AND user_id = ?
-       ORDER BY total_voice_seconds DESC`,
+      `SELECT v.channel_id, dc.name AS channel_name, dc.type AS channel_type,
+        v.total_voice_seconds, v.total_sessions
+       FROM voice_channel_stats v
+       LEFT JOIN discord_channels dc ON dc.guild_id = v.guild_id AND dc.channel_id = v.channel_id
+       WHERE v.guild_id = ? AND v.user_id = ?
+       ORDER BY v.total_voice_seconds DESC`,
       [guildId, userId]
     );
     const [voiceSessions] = await this.pool.execute(
@@ -1017,12 +1199,16 @@ class MySqlStatsRepository {
         guild_id: guildId,
         user_id: userId,
         channel_id: row.channel_id,
+        channel_name: row.channel_name || null,
+        channel_type: row.channel_type || null,
         total_messages: Number(row.total_messages) || 0,
       })),
       voiceChannels: voiceChannels.map((row) => ({
         guild_id: guildId,
         user_id: userId,
         channel_id: row.channel_id,
+        channel_name: row.channel_name || null,
+        channel_type: row.channel_type || null,
         total_voice_seconds: Number(row.total_voice_seconds) || 0,
         total_sessions: Number(row.total_sessions) || 0,
       })),
@@ -1046,12 +1232,19 @@ class MySqlStatsRepository {
       `SELECT
         u.guild_id, u.user_id, u.username, u.command_count,
         u.joined_at, u.minecraft_username, u.minecraft_uuid, u.minecraft_linked_at,
-        COALESCE(m.total_messages, 0) AS messages,
-        COALESCE(v.total_voice_seconds, 0) AS voice_seconds,
-        COALESCE(s.reactions_given, 0) AS reactions_given,
-        COALESCE(s.reactions_received, 0) AS reactions_received,
-        COALESCE(s.mentions_received, 0) AS mentions_received,
-        COALESCE(s.replies_sent, 0) AS replies_sent,
+        COALESCE(m.total_messages, 0) AS total_messages,
+        COALESCE(v.total_voice_seconds, 0) AS total_voice_seconds,
+        COALESCE(s.reactions_given, 0) AS total_reactions_given,
+        COALESCE(s.reactions_received, 0) AS total_reactions_received,
+        COALESCE(s.mentions_received, 0) AS total_mentions_received,
+        COALESCE(s.replies_sent, 0) AS total_replies_sent,
+        COALESCE(d.messages, 0) AS period_messages,
+        COALESCE(d.voice_seconds, 0) AS period_voice_seconds,
+        COALESCE(d.commands, 0) AS period_commands,
+        COALESCE(d.reactions_given, 0) AS period_reactions_given,
+        COALESCE(d.reactions_received, 0) AS period_reactions_received,
+        COALESCE(d.mentions_received, 0) AS period_mentions_received,
+        COALESCE(d.replies_sent, 0) AS period_replies_sent,
         COALESCE(d.activity_score, 0) AS activity_score
        FROM stats_users u
        LEFT JOIN message_stats m ON m.guild_id = u.guild_id AND m.user_id = u.user_id
@@ -1059,6 +1252,13 @@ class MySqlStatsRepository {
        LEFT JOIN social_stats s ON s.guild_id = u.guild_id AND s.user_id = u.user_id
        LEFT JOIN (
          SELECT guild_id, user_id,
+           SUM(messages) AS messages,
+           SUM(voice_seconds) AS voice_seconds,
+           SUM(commands) AS commands,
+           SUM(reactions_given) AS reactions_given,
+           SUM(reactions_received) AS reactions_received,
+           SUM(mentions_received) AS mentions_received,
+           SUM(replies_sent) AS replies_sent,
            SUM(messages + commands * 2 + FLOOR(voice_seconds / 60) + reactions_given + replies_sent * 2) AS activity_score
          FROM daily_activity
          WHERE guild_id = ? ${dailyFilter}
@@ -1068,6 +1268,7 @@ class MySqlStatsRepository {
       params
     );
 
+    const usePeriodTotals = Boolean(startDate);
     const entries = rows.map((row) => ({
       guildId: row.guild_id,
       userId: row.user_id,
@@ -1082,13 +1283,20 @@ class MySqlStatsRepository {
             linked_at: normalizeIso(row.minecraft_linked_at),
           }
         : null,
-      messages: Number(row.messages) || 0,
-      voiceSeconds: Number(row.voice_seconds) || 0,
-      commands: Number(row.command_count) || 0,
-      reactionsGiven: Number(row.reactions_given) || 0,
-      reactionsReceived: Number(row.reactions_received) || 0,
-      mentionsReceived: Number(row.mentions_received) || 0,
-      repliesSent: Number(row.replies_sent) || 0,
+      messages: Number(usePeriodTotals ? row.period_messages : row.total_messages) || 0,
+      voiceSeconds:
+        Number(usePeriodTotals ? row.period_voice_seconds : row.total_voice_seconds) || 0,
+      commands: Number(usePeriodTotals ? row.period_commands : row.command_count) || 0,
+      reactionsGiven:
+        Number(usePeriodTotals ? row.period_reactions_given : row.total_reactions_given) || 0,
+      reactionsReceived:
+        Number(usePeriodTotals ? row.period_reactions_received : row.total_reactions_received) ||
+        0,
+      mentionsReceived:
+        Number(usePeriodTotals ? row.period_mentions_received : row.total_mentions_received) ||
+        0,
+      repliesSent:
+        Number(usePeriodTotals ? row.period_replies_sent : row.total_replies_sent) || 0,
       activityScore: Number(row.activity_score) || 0,
     }));
 
@@ -1123,24 +1331,31 @@ class MySqlStatsRepository {
 
   async getTopChannels(guildId, userId) {
     const [rows] = await this.pool.execute(
-      `SELECT channel_id, SUM(messages) AS messages, SUM(voice_seconds) AS voice_seconds
+      `SELECT totals.channel_id, dc.name AS channel_name, dc.type AS channel_type,
+        totals.messages, totals.voice_seconds
        FROM (
-         SELECT channel_id, total_messages AS messages, 0 AS voice_seconds
-         FROM message_channel_stats
-         WHERE guild_id = ? AND user_id = ?
-         UNION ALL
-         SELECT channel_id, 0 AS messages, total_voice_seconds AS voice_seconds
-         FROM voice_channel_stats
-         WHERE guild_id = ? AND user_id = ?
-       ) channel_totals
-       GROUP BY channel_id
-       ORDER BY (SUM(messages) + SUM(voice_seconds) / 60) DESC
+         SELECT channel_id, SUM(messages) AS messages, SUM(voice_seconds) AS voice_seconds
+         FROM (
+           SELECT channel_id, total_messages AS messages, 0 AS voice_seconds
+           FROM message_channel_stats
+           WHERE guild_id = ? AND user_id = ?
+           UNION ALL
+           SELECT channel_id, 0 AS messages, total_voice_seconds AS voice_seconds
+           FROM voice_channel_stats
+           WHERE guild_id = ? AND user_id = ?
+         ) channel_totals
+         GROUP BY channel_id
+       ) totals
+       LEFT JOIN discord_channels dc ON dc.guild_id = ? AND dc.channel_id = totals.channel_id
+       ORDER BY (totals.messages + totals.voice_seconds / 60) DESC
        LIMIT 10`,
-      [guildId, userId, guildId, userId]
+      [guildId, userId, guildId, userId, guildId]
     );
 
     return rows.map((row) => ({
       channelId: row.channel_id,
+      channelName: row.channel_name || null,
+      channelType: row.channel_type || null,
       messages: Number(row.messages) || 0,
       voiceSeconds: Number(row.voice_seconds) || 0,
     }));
@@ -1170,22 +1385,38 @@ class MySqlStatsRepository {
     const period = options.period || "all";
     const limit = normalizeLimit(options.limit, 100, 500);
     const startDate = normalizePeriod(period);
+    const visibility = options.visibility || "public";
+    const visibilityFilter = getChannelVisibilityFilter(visibility);
+    const excludedChannelIds = getExcludedChannelIds(options.excludedChannelIds);
+    const excludedFilter = excludedChannelIds.length
+      ? `AND totals.channel_id NOT IN (${excludedChannelIds.map(() => "?").join(", ")})`
+      : "";
 
     if (startDate) {
       const [rows] = await this.pool.execute(
-        `SELECT channel_id, SUM(messages) AS messages, SUM(voice_seconds) AS voice_seconds,
-          SUM(reactions) AS reactions
-         FROM channel_daily_activity
-         WHERE guild_id = ? AND date >= ?
-         GROUP BY channel_id
-         ORDER BY (SUM(messages) + SUM(voice_seconds) / 60 + SUM(reactions)) DESC
+        `SELECT totals.channel_id, dc.name AS channel_name, dc.type AS channel_type,
+          COALESCE(dc.is_public, 1) AS is_public,
+          totals.messages, totals.voice_seconds, totals.reactions
+         FROM (
+           SELECT channel_id, SUM(messages) AS messages, SUM(voice_seconds) AS voice_seconds,
+            SUM(reactions) AS reactions
+           FROM channel_daily_activity
+           WHERE guild_id = ? AND date >= ?
+           GROUP BY channel_id
+         ) totals
+         LEFT JOIN discord_channels dc ON dc.guild_id = ? AND dc.channel_id = totals.channel_id
+         WHERE 1 = 1 ${visibilityFilter} ${excludedFilter}
+         ORDER BY (totals.messages + totals.voice_seconds / 60 + totals.reactions) DESC
          LIMIT ?`,
-        [guildId, startDate, limit]
+        [guildId, startDate, guildId, ...excludedChannelIds, limit]
       );
 
       return rows.map((row, index) => ({
         rank: index + 1,
         channelId: row.channel_id,
+        channelName: row.channel_name || null,
+        channelType: row.channel_type || null,
+        isPublic: Number(row.is_public) === 1,
         messages: Number(row.messages) || 0,
         voiceSeconds: Number(row.voice_seconds) || 0,
         reactions: Number(row.reactions) || 0,
@@ -1193,25 +1424,35 @@ class MySqlStatsRepository {
     }
 
     const [rows] = await this.pool.execute(
-      `SELECT channel_id, SUM(messages) AS messages, SUM(voice_seconds) AS voice_seconds
+      `SELECT totals.channel_id, dc.name AS channel_name, dc.type AS channel_type,
+        COALESCE(dc.is_public, 1) AS is_public,
+        totals.messages, totals.voice_seconds
        FROM (
-         SELECT channel_id, total_messages AS messages, 0 AS voice_seconds
-         FROM message_channel_stats
-         WHERE guild_id = ?
-         UNION ALL
-         SELECT channel_id, 0 AS messages, total_voice_seconds AS voice_seconds
-         FROM voice_channel_stats
-         WHERE guild_id = ?
-       ) channel_totals
-       GROUP BY channel_id
-       ORDER BY (SUM(messages) + SUM(voice_seconds) / 60) DESC
+         SELECT channel_id, SUM(messages) AS messages, SUM(voice_seconds) AS voice_seconds
+         FROM (
+           SELECT channel_id, total_messages AS messages, 0 AS voice_seconds
+           FROM message_channel_stats
+           WHERE guild_id = ?
+           UNION ALL
+           SELECT channel_id, 0 AS messages, total_voice_seconds AS voice_seconds
+           FROM voice_channel_stats
+           WHERE guild_id = ?
+         ) channel_totals
+         GROUP BY channel_id
+       ) totals
+       LEFT JOIN discord_channels dc ON dc.guild_id = ? AND dc.channel_id = totals.channel_id
+       WHERE 1 = 1 ${visibilityFilter} ${excludedFilter}
+       ORDER BY (totals.messages + totals.voice_seconds / 60) DESC
        LIMIT ?`,
-      [guildId, guildId, limit]
+      [guildId, guildId, guildId, ...excludedChannelIds, limit]
     );
 
     return rows.map((row, index) => ({
       rank: index + 1,
       channelId: row.channel_id,
+      channelName: row.channel_name || null,
+      channelType: row.channel_type || null,
+      isPublic: Number(row.is_public) === 1,
       messages: Number(row.messages) || 0,
       voiceSeconds: Number(row.voice_seconds) || 0,
       reactions: 0,

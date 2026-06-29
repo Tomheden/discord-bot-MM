@@ -10,6 +10,7 @@ const {
 
 const token = config.client.token || process.env.CLIENT_TOKEN;
 const guildId = process.env.STATS_DEFAULT_GUILD_ID || process.env.GUILD_ID;
+const VIEW_CHANNEL_BIT = 1n << 10n;
 
 const fetchAllMembers = async (rest, guildId) => {
   const members = [];
@@ -38,6 +39,43 @@ const fetchAllMembers = async (rest, guildId) => {
   return members;
 };
 
+const syncChannels = async (repository, rest, guildId) => {
+  if (!repository.syncGuildChannel) {
+    return 0;
+  }
+
+  const channels = await rest.get(Routes.guildChannels(guildId));
+  const now = new Date();
+  let synced = 0;
+
+  for (const channel of channels || []) {
+    await repository.syncGuildChannel({
+      guildId,
+      channelId: channel.id,
+      name: channel.name,
+      type: channel.type,
+      parentId: channel.parent_id,
+      isPublic: isPublicRestChannel(channel, guildId),
+      timestamp: now,
+    });
+    synced += 1;
+  }
+
+  return synced;
+};
+
+const isPublicRestChannel = (channel, guildId) => {
+  const everyoneOverwrite = (channel.permission_overwrites || []).find(
+    (overwrite) => overwrite.id === guildId
+  );
+
+  if (!everyoneOverwrite?.deny) {
+    return true;
+  }
+
+  return (BigInt(everyoneOverwrite.deny) & VIEW_CHANNEL_BIT) === 0n;
+};
+
 const run = async () => {
   if (!token || !guildId) {
     console.error("Missing CLIENT_TOKEN and GUILD_ID or STATS_DEFAULT_GUILD_ID.");
@@ -52,6 +90,7 @@ const run = async () => {
       });
   await repository.init();
 
+  const syncedChannels = await syncChannels(repository, rest, guildId);
   const members = await fetchAllMembers(rest, guildId);
   const now = new Date();
   let synced = 0;
@@ -81,7 +120,9 @@ const run = async () => {
     await repository.close();
   }
 
-  console.log(`[stats] Synced ${synced} guild members into stats storage.`);
+  console.log(
+    `[stats] Synced ${synced} guild members and ${syncedChannels} channels into stats storage.`
+  );
 };
 
 run().catch((error) => {

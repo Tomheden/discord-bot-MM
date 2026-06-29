@@ -36,14 +36,14 @@ const emptyStatsData = () => {
 const isSnowflake = (value) =>
   typeof value === "string" && /^\d{5,25}$/.test(value);
 
-const toIsoString = (value = new Date()) => {
+const toDate = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return new Date().toISOString();
-  }
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+};
 
-  return date.toISOString();
+const toIsoString = (value = new Date()) => {
+  return toDate(value).toISOString();
 };
 
 const getDateKey = (value = new Date()) => toIsoString(value).slice(0, 10);
@@ -690,10 +690,11 @@ class StatsRepository {
   getRanking(type, options = {}) {
     const { guildId, period } = options;
     const users = Object.values(this.data.users).filter((user) => !guildId || user.guild_id === guildId);
+    const usePeriodTotals = Boolean(this.getPeriodStart(period));
 
     const entries = users.map((user) => {
       const stats = this.getUserStats(user.guild_id, user.user_id);
-      const activityScore = this.getActivityScore(user.guild_id, user.user_id, period);
+      const periodTotals = this.getPeriodTotals(user.guild_id, user.user_id, period);
 
       return {
         guildId: user.guild_id,
@@ -701,14 +702,14 @@ class StatsRepository {
         username: user.username,
         joinedAt: user.joined_at || null,
         minecraft: this.getMinecraftLink(user.guild_id, user.user_id),
-        messages: stats.messages,
-        voiceSeconds: stats.voiceSeconds,
-        commands: stats.commands,
+        messages: usePeriodTotals ? periodTotals.messages : stats.messages,
+        voiceSeconds: usePeriodTotals ? periodTotals.voiceSeconds : stats.voiceSeconds,
+        commands: usePeriodTotals ? periodTotals.commands : stats.commands,
         reactionsGiven: 0,
         reactionsReceived: 0,
         mentionsReceived: 0,
         repliesSent: 0,
-        activityScore,
+        activityScore: periodTotals.activityScore,
       };
     });
 
@@ -733,6 +734,10 @@ class StatsRepository {
   }
 
   getActivityScore(guildId, userId, period) {
+    return this.getPeriodTotals(guildId, userId, period).activityScore;
+  }
+
+  getPeriodTotals(guildId, userId, period) {
     const startDate = this.getPeriodStart(period);
 
     return Object.values(this.data.daily_activity)
@@ -743,15 +748,45 @@ class StatsRepository {
         return !startDate || entry.date >= startDate;
       })
       .reduce(
-        (total, entry) =>
-          total + entry.messages + entry.commands * 2 + Math.floor(entry.voice_seconds / 60),
-        0
+        (total, entry) => {
+          const messages = entry.messages || 0;
+          const voiceSeconds = entry.voice_seconds || 0;
+          const commands = entry.commands || 0;
+
+          total.messages += messages;
+          total.voiceSeconds += voiceSeconds;
+          total.commands += commands;
+          total.activityScore += messages + commands * 2 + Math.floor(voiceSeconds / 60);
+
+          return total;
+        },
+        {
+          messages: 0,
+          voiceSeconds: 0,
+          commands: 0,
+          activityScore: 0,
+        }
       );
   }
 
   getGuildStats(guildId) {
     const users = Object.values(this.data.users).filter((user) => user.guild_id === guildId);
     const dailyTotals = new Map();
+    const countActiveMembers = (period) => {
+      const startDate = this.getPeriodStart(period);
+      const activeUserIds = new Set();
+
+      for (const entry of Object.values(this.data.daily_activity)) {
+        if (entry.guild_id !== guildId || (startDate && entry.date < startDate)) {
+          continue;
+        }
+        if ((entry.messages || 0) > 0 || (entry.voice_seconds || 0) > 0 || (entry.commands || 0) > 0) {
+          activeUserIds.add(entry.user_id);
+        }
+      }
+
+      return activeUserIds.size;
+    };
 
     for (const entry of Object.values(this.data.daily_activity)) {
       if (entry.guild_id !== guildId) {
@@ -774,6 +809,12 @@ class StatsRepository {
     return {
       guildId,
       users: users.length,
+      totalMembers: users.filter((user) => !user.left_at).length,
+      activeMembers: {
+        day: countActiveMembers("day"),
+        week: countActiveMembers("week"),
+        month: countActiveMembers("month"),
+      },
       totalMessages: Object.values(this.data.message_stats)
         .filter((entry) => entry.guild_id === guildId)
         .reduce((total, entry) => total + entry.total_messages, 0),
@@ -875,21 +916,28 @@ class StatsRepository {
     );
   }
 
-  getPeriodStart(period) {
+  getPeriodStart(period, now = new Date()) {
     if (!period || period === "all") {
       return null;
     }
 
-    const date = new Date();
-    if (period === "week") {
-      date.setUTCDate(date.getUTCDate() - 7);
+    const date = toDate(now);
+    const start = new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+    );
+
+    if (period === "day") {
+      return start.toISOString().slice(0, 10);
+    } else if (period === "week") {
+      const mondayOffset = (start.getUTCDay() + 6) % 7;
+      start.setUTCDate(start.getUTCDate() - mondayOffset);
     } else if (period === "month") {
-      date.setUTCDate(date.getUTCDate() - 30);
+      start.setUTCDate(1);
     } else {
       return null;
     }
 
-    return date.toISOString().slice(0, 10);
+    return start.toISOString().slice(0, 10);
   }
 }
 

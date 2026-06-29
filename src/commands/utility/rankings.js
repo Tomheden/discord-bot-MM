@@ -60,9 +60,9 @@ const RANKING_TYPES = {
 
 const PERIOD_LABELS = {
   all: "historico",
-  day: "ultimas 24h",
-  week: "ultimos 7 dias",
-  month: "ultimos 30 dias",
+  day: "hoy",
+  week: "esta semana",
+  month: "este mes",
 };
 
 const clampLimit = (value) => {
@@ -133,9 +133,9 @@ module.exports = {
         .setRequired(false)
         .addChoices(
           { name: "Historico", value: "all" },
-          { name: "Ultimas 24h", value: "day" },
-          { name: "Ultimos 7 dias", value: "week" },
-          { name: "Ultimos 30 dias", value: "month" }
+          { name: "Hoy", value: "day" },
+          { name: "Esta semana", value: "week" },
+          { name: "Este mes", value: "month" }
         )
     )
     .addIntegerOption((option) =>

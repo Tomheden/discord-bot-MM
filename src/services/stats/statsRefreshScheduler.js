@@ -1,4 +1,5 @@
 const cron = require("node-cron");
+const { PermissionsBitField } = require("discord.js");
 
 const DEFAULT_SCHEDULE = "0 */3 * * *";
 const DEFAULT_ACTIVE_WINDOW_DAYS = 30;
@@ -54,6 +55,34 @@ const isRecentlyActive = (user, cutoffMs) => {
   }
 
   return new Date(user.last_activity_at).getTime() >= cutoffMs;
+};
+
+const isPublicChannel = (guild, channel) =>
+  channel?.permissionsFor(guild.roles.everyone)?.has(PermissionsBitField.Flags.ViewChannel) ??
+  true;
+
+const syncGuildChannels = async (client, guild) => {
+  if (!client.stats.repository.syncGuildChannel) {
+    return 0;
+  }
+
+  const now = new Date();
+  let synced = 0;
+
+  for (const channel of guild.channels.cache.values()) {
+    await client.stats.repository.syncGuildChannel({
+      guildId: guild.id,
+      channelId: channel.id,
+      name: channel.name,
+      type: channel.type,
+      parentId: channel.parentId,
+      isPublic: isPublicChannel(guild, channel),
+      timestamp: now,
+    });
+    synced += 1;
+  }
+
+  return synced;
 };
 
 const refreshGuildStats = async (client, guild, options) => {
@@ -141,13 +170,17 @@ const syncGuildMembers = async (client, guild) => {
 
 const syncAllGuildMembers = async (client) => {
   let synced = 0;
+  let syncedChannels = 0;
 
   for (const guild of client.guilds.cache.values()) {
+    syncedChannels += await syncGuildChannels(client, guild);
     synced += await syncGuildMembers(client, guild);
   }
 
   await client.stats.repository.save();
-  console.log(`[stats] Member sync complete. Members synced: ${synced}.`);
+  console.log(
+    `[stats] Member sync complete. Members synced: ${synced}. Channels synced: ${syncedChannels}.`
+  );
 };
 
 const registerStatsRefreshCron = (client) => {
@@ -212,5 +245,6 @@ const registerStatsMemberSyncCron = (client) => {
 module.exports = {
   registerStatsMemberSyncCron,
   registerStatsRefreshCron,
+  syncGuildChannels,
   syncAllGuildMembers,
 };

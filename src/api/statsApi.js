@@ -172,11 +172,15 @@ const formatUserActivityResponse = (activity, profileSource = {}) => {
 
 const formatMessageChannel = (entry) => ({
   channelId: entry.channelId || entry.channel_id,
+  channelName: entry.channelName || entry.channel_name || null,
+  channelType: entry.channelType || entry.channel_type || null,
   messages: entry.messages ?? entry.total_messages ?? 0,
 });
 
 const formatVoiceChannel = (entry) => ({
   channelId: entry.channelId || entry.channel_id,
+  channelName: entry.channelName || entry.channel_name || null,
+  channelType: entry.channelType || entry.channel_type || null,
   voiceSeconds: entry.voiceSeconds ?? entry.total_voice_seconds ?? 0,
   sessions: entry.sessions ?? entry.total_sessions ?? 0,
 });
@@ -215,6 +219,12 @@ const formatRankingEntry = (entry) => {
 const formatLinkResponse = (link, source = {}) => ({
   profile: buildProfile(source, link),
 });
+
+const normalizeChannelVisibility = (value) => {
+  const visibility = value || "public";
+
+  return ["public", "private", "all"].includes(visibility) ? visibility : null;
+};
 
 const createStatsApp = (repository, config) => {
   const app = express();
@@ -369,6 +379,7 @@ const createStatsApp = (repository, config) => {
     const guildId = await resolveGuildId(req, repository, config);
     const period = req.query.period || "all";
     const limit = Number(req.query.limit || 100);
+    const visibility = normalizeChannelVisibility(req.query.visibility);
 
     if (type === "channels") {
       if (!guildId) {
@@ -379,8 +390,12 @@ const createStatsApp = (repository, config) => {
         res.status(400).json({ error: "Valid period is required" });
         return;
       }
+      if (!visibility) {
+        res.status(400).json({ error: "Valid visibility is required" });
+        return;
+      }
 
-      res.json(await repository.getGuildChannels(guildId, { period, limit }));
+      res.json(await repository.getGuildChannels(guildId, { period, limit, visibility }));
       return;
     }
 
@@ -410,6 +425,7 @@ const createStatsApp = (repository, config) => {
     const guildId = await resolveGuildId(req, repository, config);
     const period = req.query.period || "all";
     const limit = Number(req.query.limit || 10);
+    const visibility = normalizeChannelVisibility(req.query.visibility);
 
     if (!guildId) {
       res.status(400).json({ error: "Configured guild is required" });
@@ -419,8 +435,12 @@ const createStatsApp = (repository, config) => {
       res.status(400).json({ error: "Valid period is required" });
       return;
     }
+    if (!visibility) {
+      res.status(400).json({ error: "Valid visibility is required" });
+      return;
+    }
 
-    res.json(await repository.getGuildChannels(guildId, { period, limit }));
+    res.json(await repository.getGuildChannels(guildId, { period, limit, visibility }));
   }));
 
   app.get("/api/guilds/:guildId/stats", asyncRoute(async (req, res) => {

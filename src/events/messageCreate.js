@@ -1,4 +1,8 @@
-const { Events } = require("discord.js");
+const { Events, PermissionsBitField } = require("discord.js");
+
+const isPublicChannel = (guild, channel) =>
+  channel?.permissionsFor(guild.roles.everyone)?.has(PermissionsBitField.Flags.ViewChannel) ??
+  true;
 
 module.exports = {
   event: Events.MessageCreate,
@@ -23,6 +27,10 @@ module.exports = {
       username: message.author.username,
       joinedAt: message.member?.joinedAt,
       channelId: message.channelId,
+      channelName: message.channel?.name || null,
+      channelType: message.channel?.type ?? null,
+      channelParentId: message.channel?.parentId || null,
+      channelIsPublic: isPublicChannel(message.guild, message.channel),
       mentionedUsers: [...message.mentions.users.values()].map((user) => ({
         id: user.id,
         username: user.username,
